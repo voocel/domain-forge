@@ -1,0 +1,85 @@
+[package]
+name = "domain-forge"
+version = "0.1.0"
+edition = "2021"
+authors = ["voocel@gmail.com"]
+description = "AI-powered domain name generation and availability checking CLI tool"
+repository = "https://github.com/voocel/domain-forge"
+license = "MIT"
+keywords = ["cli", "domain", "ai", "llm", "availability"]
+categories = ["command-line-utilities", "web-programming"]
+readme = "README.md"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# HTTP client for AI APIs and domain checking
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Terminal UI - beautiful interactive prompts
+inquire = "0.7.5"
+
+# Environment variables
+dotenv = "0.15"
+
+# Regular expressions
+regex = "1.10"
+
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Async traits
+async-trait = "0.1"
+
+# Random number generation
+rand = "0.8"
+
+# Futures utilities (needed by domain checker)
+futures = "0.3"
+
+# Logging (needed by domain checker)
+tracing = "0.1"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.8"
+assert_cmd = "2.0"
+predicates = "3.0"
+
+[features]
+default = ["rdap", "whois"]
+
+# Domain checking protocols
+rdap = []
+whois = []
+
+# Debug features
+debug = []
+
+[[bin]]
+name = "domain-forge"
+path = "src/main.rs"
+
+[lib]
+name = "domain_forge"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 0
+debug = true

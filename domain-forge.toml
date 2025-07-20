@@ -1,0 +1,40 @@
+# Domain Forge Configuration
+# Simple and clean configuration for LLM-powered domain generation
+
+[llm]
+# LLM provider: "openai", "claude", "ollama", "custom"
+provider = "openai"
+model = "gpt-4.1-mini"
+temperature = 0.7
+max_tokens = 1000
+timeout = 30
+
+[generation]
+count = 10
+style = "creative"  # creative, professional, brandable, descriptive, short, tech
+tlds = ["com", "org", "io", "ai", "tech", "app"]
+keywords = ["tech", "app", "digital"]
+avoid_words = ["spam", "bad"]
+min_length = 3
+max_length = 20
+
+[domain_check]
+concurrency = 15
+timeout = 30
+enable_rdap = true
+enable_whois = true
+retry_attempts = 3
+
+[output]
+format = "pretty"  # pretty, json, csv
+colors = true
+progress = true
+
+[api_keys]
+# Get your API keys from:
+# OpenAI: https://platform.openai.com/api-keys
+# Claude: https://console.anthropic.com/
+openai = "your-openai-api-key"
+claude = "your-claude-api-key"
+# Ollama doesn't need API key (local)
+# Custom endpoints may or may not need API key
