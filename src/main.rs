@@ -259,9 +259,11 @@ async fn check_domain_availability(domains: &[DomainSuggestion]) -> Result<()> {
     println!("═══════════════════════════════════");
 
     let checker = DomainChecker::new();
-    let domain_names: Vec<String> = domains.iter().map(|d| d.full_domain.clone()).collect();
+    let domain_names: Vec<String> = domains.iter().map(|d| d.get_full_domain()).collect();
 
+    let check_start = std::time::Instant::now();
     let results = checker.check_domains(&domain_names).await?;
+    let check_duration = check_start.elapsed();
 
     println!();
     println!("📊 Results:");
@@ -273,21 +275,21 @@ async fn check_domain_availability(domains: &[DomainSuggestion]) -> Result<()> {
     for (domain, result) in domains.iter().zip(results.iter()) {
         match result.status {
             AvailabilityStatus::Available => {
-                println!("✅ {} - AVAILABLE", domain.full_domain);
+                println!("✅ {} - AVAILABLE", domain.get_full_domain());
                 available_count += 1;
             }
             AvailabilityStatus::Taken => {
-                println!("❌ {} - TAKEN", domain.full_domain);
+                println!("❌ {} - TAKEN", domain.get_full_domain());
                 if let Some(registrar) = &result.registrar {
                     println!("   📝 Registrar: {}", registrar);
                 }
                 taken_count += 1;
             }
             AvailabilityStatus::Unknown => {
-                println!("❓ {} - UNKNOWN", domain.full_domain);
+                println!("❓ {} - UNKNOWN", domain.get_full_domain());
             }
             AvailabilityStatus::Error => {
-                println!("⚠️  {} - ERROR", domain.full_domain);
+                println!("⚠️  {} - ERROR", domain.get_full_domain());
                 if let Some(error) = &result.error_message {
                     println!("   🔍 {}", error);
                 }
@@ -300,11 +302,17 @@ async fn check_domain_availability(domains: &[DomainSuggestion]) -> Result<()> {
         println!();
     }
 
-    // Summary
+    // Performance summary
+    let metrics = checker.get_metrics_snapshot();
+    
     println!("📈 Summary:");
     println!("   Available: {}", available_count);
     println!("   Taken: {}", taken_count);
     println!("   Total checked: {}", domains.len());
+    println!("   ⏱️  Total time: {:.2}s", check_duration.as_secs_f32());
+    if metrics.domains_checked > 0 {
+        println!("   📊 Average check time: {:.1}ms", metrics.avg_check_time_ms());
+    }
 
     if available_count > 0 {
         println!();

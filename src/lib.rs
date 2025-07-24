@@ -12,6 +12,7 @@ pub use error::{DomainForgeError, Result};
 pub use types::{
     AvailabilityStatus, CheckConfig, DomainForgeResult, DomainResult,
     DomainSuggestion, GenerationConfig, GenerationStyle, LlmProvider, LlmConfig,
+    PerformanceMetrics, MetricsSnapshot,
 };
 
 // Re-export main functionality

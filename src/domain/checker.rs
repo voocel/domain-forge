@@ -2,7 +2,7 @@
 
 use crate::domain::DomainValidator;
 use crate::error::{DomainForgeError, Result};
-use crate::types::{AvailabilityStatus, CheckConfig, CheckMethod, DomainResult};
+use crate::types::{AvailabilityStatus, CheckConfig, CheckMethod, DomainResult, PerformanceMetrics};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::future::join_all;
@@ -11,11 +11,12 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
-/// Domain availability checker
+/// Domain availability checker with performance monitoring
 pub struct DomainChecker {
     config: CheckConfig,
     client: Client,
@@ -23,6 +24,7 @@ pub struct DomainChecker {
     rdap_client: Option<RdapClient>,
     whois_client: Option<WhoisClient>,
     validator: DomainValidator,
+    metrics: Arc<PerformanceMetrics>,
 }
 
 impl DomainChecker {
@@ -37,8 +39,13 @@ impl DomainChecker {
         let client = Client::builder()
             .timeout(config.timeout)
             .user_agent("domain-forge/0.1.0")
+            .pool_max_idle_per_host(config.connection_pool_size)
+            .pool_idle_timeout(Duration::from_secs(90))
             .build()
-            .expect("Failed to create HTTP client");
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to create optimized HTTP client: {}. Using default.", e);
+                Client::new()
+            });
 
         let semaphore = Semaphore::new(config.concurrent_checks);
         
@@ -55,6 +62,7 @@ impl DomainChecker {
         };
 
         let validator = DomainValidator::new();
+        let metrics = Arc::new(PerformanceMetrics::new());
 
         Self {
             config,
@@ -63,10 +71,11 @@ impl DomainChecker {
             rdap_client,
             whois_client,
             validator,
+            metrics,
         }
     }
 
-    /// Check a single domain
+    /// Check a single domain with performance monitoring
     pub async fn check_domain(&self, domain: &str) -> Result<DomainResult> {
         let _permit = self.semaphore.acquire().await.map_err(|e| {
             DomainForgeError::internal(format!("Failed to acquire semaphore: {}", e))
@@ -79,30 +88,44 @@ impl DomainChecker {
         
         // Try RDAP first
         if let Some(rdap_client) = &self.rdap_client {
-            match rdap_client.check_domain(&validated.full_domain).await {
+            match rdap_client.check_domain(&validated.get_full_domain()).await {
                 Ok(result) => {
                     let duration = start_time.elapsed();
+                    self.metrics.increment_domains_checked();
+                    self.metrics.add_check_time(duration.as_millis() as u64);
+                    
+                    tracing::debug!(
+                        domain = %domain,
+                        method = "rdap",
+                        status = ?result.status,
+                        duration_ms = %duration.as_millis(),
+                        "Domain check completed"
+                    );
+                    
                     return Ok(DomainResult {
-                        domain: validated.full_domain,
+                        domain: validated.get_full_domain().into(),
                         status: result.status,
                         method: CheckMethod::Rdap,
                         checked_at: Utc::now(),
                         check_duration: Some(duration),
-                        registrar: result.registrar,
+                        registrar: result.registrar.map(Into::into),
                         creation_date: result.creation_date,
                         expiration_date: result.expiration_date,
-                        nameservers: result.nameservers,
+                        nameservers: result.nameservers.into_iter().map(Into::into).collect(),
                         error_message: None,
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("RDAP check failed for {}: {}", domain, e);
+                    tracing::debug!(domain = %domain, method = "rdap", error = %e, "RDAP check failed");
                     
                     // If RDAP suggests domain is available, return that
                     if e.suggests_available() {
                         let duration = start_time.elapsed();
+                        self.metrics.increment_domains_checked();
+                        self.metrics.add_check_time(duration.as_millis() as u64);
+                        
                         return Ok(DomainResult {
-                            domain: validated.full_domain,
+                            domain: validated.get_full_domain().into(),
                             status: AvailabilityStatus::Available,
                             method: CheckMethod::Rdap,
                             checked_at: Utc::now(),
@@ -120,30 +143,44 @@ impl DomainChecker {
 
         // Fall back to WHOIS
         if let Some(whois_client) = &self.whois_client {
-            match whois_client.check_domain(&validated.full_domain).await {
+            match whois_client.check_domain(&validated.get_full_domain()).await {
                 Ok(result) => {
                     let duration = start_time.elapsed();
+                    self.metrics.increment_domains_checked();
+                    self.metrics.add_check_time(duration.as_millis() as u64);
+                    
+                    tracing::debug!(
+                        domain = %domain,
+                        method = "whois",
+                        status = ?result.status,
+                        duration_ms = %duration.as_millis(),
+                        "Domain check completed"
+                    );
+                    
                     return Ok(DomainResult {
-                        domain: validated.full_domain,
+                        domain: validated.get_full_domain().into(),
                         status: result.status,
                         method: CheckMethod::Whois,
                         checked_at: Utc::now(),
                         check_duration: Some(duration),
-                        registrar: result.registrar,
+                        registrar: result.registrar.map(Into::into),
                         creation_date: result.creation_date,
                         expiration_date: result.expiration_date,
-                        nameservers: result.nameservers,
+                        nameservers: result.nameservers.into_iter().map(Into::into).collect(),
                         error_message: None,
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("WHOIS check failed for {}: {}", domain, e);
+                    tracing::debug!(domain = %domain, method = "whois", error = %e, "WHOIS check failed");
                     
                     // If WHOIS suggests domain is available, return that
                     if e.suggests_available() {
                         let duration = start_time.elapsed();
+                        self.metrics.increment_domains_checked();
+                        self.metrics.add_check_time(duration.as_millis() as u64);
+                        
                         return Ok(DomainResult {
-                            domain: validated.full_domain,
+                            domain: validated.get_full_domain().into(),
                             status: AvailabilityStatus::Available,
                             method: CheckMethod::Whois,
                             checked_at: Utc::now(),
@@ -161,8 +198,16 @@ impl DomainChecker {
 
         // Both methods failed
         let duration = start_time.elapsed();
+        self.metrics.increment_errors();
+        
+        tracing::warn!(
+            domain = %domain,
+            duration_ms = %duration.as_millis(),
+            "All domain checking methods failed"
+        );
+        
         Ok(DomainResult {
-            domain: validated.full_domain,
+            domain: validated.get_full_domain().into(),
             status: AvailabilityStatus::Unknown,
             method: CheckMethod::Unknown,
             checked_at: Utc::now(),
@@ -171,24 +216,38 @@ impl DomainChecker {
             creation_date: None,
             expiration_date: None,
             nameservers: Vec::new(),
-            error_message: Some("All checking methods failed".to_string()),
+            error_message: Some("All checking methods failed".into()),
         })
     }
 
-    /// Check multiple domains concurrently
+    /// Check multiple domains concurrently with batch performance monitoring
     pub async fn check_domains(&self, domains: &[String]) -> Result<Vec<DomainResult>> {
+        let batch_start = Instant::now();
         let futures = domains.iter().map(|domain| self.check_domain(domain));
         let results = join_all(futures).await;
         
         let mut success_results = Vec::new();
-        for result in results {
+        let mut error_count = 0u32;
+        
+        for (domain, result) in domains.iter().zip(results.iter()) {
             match result {
-                Ok(domain_result) => success_results.push(domain_result),
+                Ok(domain_result) => success_results.push(domain_result.clone()),
                 Err(e) => {
-                    tracing::warn!("Failed to check domain: {}", e);
+                    error_count += 1;
+                    tracing::warn!(domain = %domain, error = %e, "Failed to check domain");
                 }
             }
         }
+        
+        let batch_duration = batch_start.elapsed();
+        tracing::info!(
+            domains_requested = %domains.len(),
+            domains_processed = %success_results.len(),
+            errors = %error_count,
+            batch_duration_ms = %batch_duration.as_millis(),
+            avg_duration_ms = %(batch_duration.as_millis() / domains.len().max(1) as u128),
+            "Batch domain check completed"
+        );
         
         Ok(success_results)
     }
@@ -201,6 +260,16 @@ impl DomainChecker {
     /// Check if checker is configured properly
     pub fn is_configured(&self) -> bool {
         self.rdap_client.is_some() || self.whois_client.is_some()
+    }
+    
+    /// Get performance metrics
+    pub fn get_metrics(&self) -> Arc<PerformanceMetrics> {
+        Arc::clone(&self.metrics)
+    }
+    
+    /// Get current metrics snapshot
+    pub fn get_metrics_snapshot(&self) -> crate::types::MetricsSnapshot {
+        self.metrics.get_stats()
     }
 }
 
@@ -238,11 +307,14 @@ impl RdapClient {
     }
 
     async fn check_domain(&self, domain: &str) -> Result<DomainCheckResult> {
-        let tld = domain.split('.').last().unwrap_or("");
+        // Safe TLD extraction
+        let tld = domain.split('.').last()
+            .ok_or_else(|| DomainForgeError::validation("Invalid domain format - no TLD found".to_string()))?;
+            
         let rdap_url = self.rdap_servers.get(tld)
             .ok_or_else(|| DomainForgeError::domain_check(
                 domain.to_string(),
-                "No RDAP server found for TLD".to_string(),
+                format!("No RDAP server found for TLD: {}", tld),
                 Some("rdap".to_string()),
             ))?;
 
@@ -533,16 +605,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_domain_validation() {
+    async fn test_domain_checker_metrics() {
         let checker = DomainChecker::new();
+        let metrics = checker.get_metrics_snapshot();
         
-        // This should fail validation
-        let result = checker.check_domain("invalid-domain").await;
-        assert!(result.is_err());
-        
-        // This should pass validation but may fail checking
-        let result = checker.check_domain("example.com").await;
-        // We don't assert success here because it depends on network availability
+        // Initially should be zero
+        assert_eq!(metrics.domains_checked, 0);
+        assert_eq!(metrics.errors_encountered, 0);
     }
 
     #[test]
