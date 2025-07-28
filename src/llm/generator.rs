@@ -12,7 +12,7 @@ use std::time::Instant;
 /// Enhanced with thread-safe shared state and performance metrics
 #[derive(Clone)]
 pub struct DomainGenerator {
-    providers: Arc<RwLock<HashMap<String, Box<dyn LlmProvider>>>>,
+    providers: Arc<RwLock<HashMap<String, Arc<dyn LlmProvider>>>>,
     default_provider: Arc<RwLock<String>>,
     metrics: Arc<PerformanceMetrics>,
 }
@@ -31,7 +31,7 @@ impl DomainGenerator {
     pub fn add_provider(&self, config: &LlmConfig) -> Result<()> {
         let provider = create_provider(config)?;
         let mut providers = self.providers.write();
-        providers.insert(config.provider.clone(), provider);
+        providers.insert(config.provider.clone(), Arc::from(provider));
         Ok(())
     }
     
@@ -58,34 +58,21 @@ impl DomainGenerator {
     ) -> Result<Vec<DomainSuggestion>> {
         let start_time = Instant::now();
         
-        // Get provider with read lock (minimal lock time)
+        // Record API call
+        self.metrics.increment_api_calls();
+        
+        // Get provider (clone Arc to avoid holding lock during async operation)
         let provider = {
             let providers = self.providers.read();
             providers.get(provider_name)
                 .ok_or_else(|| crate::error::DomainForgeError::config(
                     format!("Provider not configured: {}", provider_name)
                 ))?
-                // We need to clone the Box here to avoid holding the lock during async operation
-                // This is a limitation of the current trait object design
-                .name()
+                .clone()
         };
         
-        // For now, we'll need to restructure this to avoid the clone issue
-        // Let's use a different approach - get the provider outside the async context
-        let result = {
-            let providers = self.providers.read();
-            let provider = providers.get(provider_name)
-                .ok_or_else(|| crate::error::DomainForgeError::config(
-                    format!("Provider not configured: {}", provider_name)
-                ))?;
-            
-            // Record API call
-            self.metrics.increment_api_calls();
-            
-            // Drop the lock before async call by cloning the provider
-            // Note: This requires changes to how providers are stored
-            provider.generate_domains(config)
-        }.await;
+        // Call the provider's generate_domains method (no lock held)
+        let result = provider.generate_domains(config).await;
         
         match &result {
             Ok(domains) => {

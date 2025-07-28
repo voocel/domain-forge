@@ -1,7 +1,6 @@
 //! Error handling for domain-forge
 
 
-use std::collections::HashMap;
 use thiserror::Error;
 
 /// Main error type for domain-forge

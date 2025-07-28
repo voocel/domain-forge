@@ -16,7 +16,6 @@ pub use ollama::OllamaProvider;
 use crate::error::Result;
 use crate::types::{DomainSuggestion, GenerationConfig};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 /// Common domain suggestion structure for parsing AI responses
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,7 +25,7 @@ pub struct DomainSuggestionRaw {
     pub confidence: Option<f32>,
 }
 
-/// Parse domain suggestions from AI response text with optimized memory usage
+/// Parse domain suggestions from AI response text
 pub fn parse_domain_suggestions(content: &str, config: &GenerationConfig) -> Result<Vec<DomainSuggestion>> {
     // Try to extract JSON from the response
     let json_start = content.find('[').unwrap_or(0);
@@ -41,26 +40,15 @@ pub fn parse_domain_suggestions(content: &str, config: &GenerationConfig) -> Res
 
     let mut suggestions = Vec::new();
     
-    // Pre-compute shared Arc<str> for TLDs to reduce allocations
-    let tld_arcs: Vec<Arc<str>> = config.tlds.iter().cloned().collect();
-    
     for raw in raw_suggestions {
-        // Convert to Arc<str> once
-        let name_arc: Arc<str> = if raw.name.contains('.') {
-            raw.name.into()
-        } else {
-            raw.name.into()
-        };
-        
-        let reasoning_arc = raw.reasoning.map(|r| r.into());
         let confidence = raw.confidence.unwrap_or(0.8);
         
-        for tld_arc in &tld_arcs {
+        for tld in &config.tlds {
             suggestions.push(DomainSuggestion::new(
-                name_arc.clone(),
-                tld_arc.clone(),
+                raw.name.clone(),
+                tld.clone(),
                 confidence,
-                reasoning_arc.clone(),
+                raw.reasoning.clone(),
             ));
         }
     }
@@ -70,7 +58,7 @@ pub fn parse_domain_suggestions(content: &str, config: &GenerationConfig) -> Res
 
 /// Build domain generation prompt
 pub fn build_domain_prompt(config: &GenerationConfig) -> String {
-    let tld_list: Vec<&str> = config.tlds.iter().map(|s| s.as_ref()).collect();
+    let tld_list: Vec<&str> = config.tlds.iter().map(|s| s.as_str()).collect();
     
     format!(
         "Generate {} creative domain names for: {}

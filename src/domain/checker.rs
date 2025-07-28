@@ -3,12 +3,10 @@
 use crate::domain::DomainValidator;
 use crate::error::{DomainForgeError, Result};
 use crate::types::{AvailabilityStatus, CheckConfig, CheckMethod, DomainResult, PerformanceMetrics};
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::future::join_all;
-use regex::Regex;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
@@ -103,15 +101,15 @@ impl DomainChecker {
                     );
                     
                     return Ok(DomainResult {
-                        domain: validated.get_full_domain().into(),
+                        domain: validated.get_full_domain(),
                         status: result.status,
                         method: CheckMethod::Rdap,
                         checked_at: Utc::now(),
                         check_duration: Some(duration),
-                        registrar: result.registrar.map(Into::into),
+                        registrar: result.registrar,
                         creation_date: result.creation_date,
                         expiration_date: result.expiration_date,
-                        nameservers: result.nameservers.into_iter().map(Into::into).collect(),
+                        nameservers: result.nameservers,
                         error_message: None,
                     });
                 }
@@ -125,7 +123,7 @@ impl DomainChecker {
                         self.metrics.add_check_time(duration.as_millis() as u64);
                         
                         return Ok(DomainResult {
-                            domain: validated.get_full_domain().into(),
+                            domain: validated.get_full_domain(),
                             status: AvailabilityStatus::Available,
                             method: CheckMethod::Rdap,
                             checked_at: Utc::now(),
@@ -158,15 +156,15 @@ impl DomainChecker {
                     );
                     
                     return Ok(DomainResult {
-                        domain: validated.get_full_domain().into(),
+                        domain: validated.get_full_domain(),
                         status: result.status,
                         method: CheckMethod::Whois,
                         checked_at: Utc::now(),
                         check_duration: Some(duration),
-                        registrar: result.registrar.map(Into::into),
+                        registrar: result.registrar,
                         creation_date: result.creation_date,
                         expiration_date: result.expiration_date,
-                        nameservers: result.nameservers.into_iter().map(Into::into).collect(),
+                        nameservers: result.nameservers,
                         error_message: None,
                     });
                 }
@@ -180,7 +178,7 @@ impl DomainChecker {
                         self.metrics.add_check_time(duration.as_millis() as u64);
                         
                         return Ok(DomainResult {
-                            domain: validated.get_full_domain().into(),
+                            domain: validated.get_full_domain(),
                             status: AvailabilityStatus::Available,
                             method: CheckMethod::Whois,
                             checked_at: Utc::now(),
@@ -207,7 +205,7 @@ impl DomainChecker {
         );
         
         Ok(DomainResult {
-            domain: validated.get_full_domain().into(),
+            domain: validated.get_full_domain(),
             status: AvailabilityStatus::Unknown,
             method: CheckMethod::Unknown,
             checked_at: Utc::now(),
@@ -216,7 +214,7 @@ impl DomainChecker {
             creation_date: None,
             expiration_date: None,
             nameservers: Vec::new(),
-            error_message: Some("All checking methods failed".into()),
+            error_message: Some("All checking methods failed".to_string()),
         })
     }
 
@@ -447,7 +445,7 @@ impl WhoisClient {
         self.parse_whois_response(&stdout, domain)
     }
 
-    fn parse_whois_response(&self, output: &str, domain: &str) -> Result<DomainCheckResult> {
+    fn parse_whois_response(&self, output: &str, _domain: &str) -> Result<DomainCheckResult> {
         let output_lower = output.to_lowercase();
 
         // Check for availability indicators

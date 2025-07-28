@@ -265,6 +265,13 @@ pub struct ValidatedDomain {
     pub is_valid: bool,
 }
 
+impl ValidatedDomain {
+    /// Get the full domain name
+    pub fn get_full_domain(&self) -> String {
+        self.full_domain.clone()
+    }
+}
+
 /// Domain validation result with error
 #[derive(Debug, Clone)]
 pub struct DomainValidationResult {

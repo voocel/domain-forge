@@ -275,6 +275,7 @@ dependencies = [
  "dotenv",
  "futures",
  "inquire",
+ "parking_lot",
  "predicates",
  "rand",
  "regex",

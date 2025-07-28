@@ -2,8 +2,6 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-use std::sync::Arc;
 use std::time::Duration;
 
 /// LLM provider type
@@ -95,24 +93,24 @@ impl std::fmt::Display for CheckMethod {
 /// Generated domain suggestion with optimized memory layout
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DomainSuggestion {
-    /// Domain name without TLD - use Arc for shared immutable strings
-    pub name: Arc<str>,
+    /// Domain name without TLD - use String for compatibility
+    pub name: String,
     /// AI reasoning for this suggestion
-    pub reasoning: Option<Arc<str>>,
+    pub reasoning: Option<String>,
     /// Confidence score (0.0-1.0)
     pub confidence: f32,
-    /// Top-level domain - use Arc for shared immutable strings
-    pub tld: Arc<str>,
+    /// Top-level domain - use String for compatibility
+    pub tld: String,
     /// Full domain name (lazy computed when needed)
     #[serde(skip)]
-    pub full_domain: Option<Arc<str>>,
+    pub full_domain: Option<String>,
     /// Generation timestamp
     pub generated_at: DateTime<Utc>,
 }
 
 impl DomainSuggestion {
-    /// Create new domain suggestion with optimized string handling
-    pub fn new(name: impl Into<Arc<str>>, tld: impl Into<Arc<str>>, confidence: f32, reasoning: Option<impl Into<Arc<str>>>) -> Self {
+    /// Create new domain suggestion
+    pub fn new(name: impl Into<String>, tld: impl Into<String>, confidence: f32, reasoning: Option<impl Into<String>>) -> Self {
         let name = name.into();
         let tld = tld.into();
         
@@ -130,7 +128,7 @@ impl DomainSuggestion {
     pub fn full_domain(&mut self) -> &str {
         if self.full_domain.is_none() {
             let full = format!("{}.{}", self.name, self.tld);
-            self.full_domain = Some(full.into());
+            self.full_domain = Some(full);
         }
         self.full_domain.as_ref().unwrap()
     }
@@ -144,16 +142,16 @@ impl DomainSuggestion {
 /// Domain availability check result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DomainResult {
-    pub domain: Arc<str>,
+    pub domain: String,
     pub status: AvailabilityStatus,
     pub method: CheckMethod,
     pub checked_at: DateTime<Utc>,
     pub check_duration: Option<Duration>,
-    pub registrar: Option<Arc<str>>,
+    pub registrar: Option<String>,
     pub creation_date: Option<DateTime<Utc>>,
     pub expiration_date: Option<DateTime<Utc>>,
-    pub nameservers: Vec<Arc<str>>,
-    pub error_message: Option<Arc<str>>,
+    pub nameservers: Vec<String>,
+    pub error_message: Option<String>,
 }
 
 /// Combined domain generation and check result
@@ -169,9 +167,9 @@ pub struct GenerationConfig {
     pub provider: LlmProvider,
     pub count: usize,
     pub style: GenerationStyle,
-    pub tlds: Vec<Arc<str>>,
+    pub tlds: Vec<String>,
     pub temperature: f32,
-    pub description: Arc<str>,
+    pub description: String,
 }
 
 impl Default for GenerationConfig {
@@ -180,9 +178,9 @@ impl Default for GenerationConfig {
             provider: LlmProvider::OpenAi,
             count: 5,
             style: GenerationStyle::Creative,
-            tlds: vec!["com".into(), "org".into(), "io".into()],
+            tlds: vec!["com".to_string(), "org".to_string(), "io".to_string()],
             temperature: 0.7,
-            description: "".into(),
+            description: "".to_string(),
         }
     }
 }

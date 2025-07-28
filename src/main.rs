@@ -208,7 +208,7 @@ fn select_domains_to_check(domains: &[DomainSuggestion]) -> Result<Vec<DomainSug
     for (i, domain) in domains.iter().enumerate() {
         println!("{}. {} (confidence: {:.0}%)",
             i + 1,
-            domain.full_domain,
+            domain.get_full_domain(),
             domain.confidence * 100.0
         );
         if let Some(reasoning) = &domain.reasoning {
@@ -219,7 +219,7 @@ fn select_domains_to_check(domains: &[DomainSuggestion]) -> Result<Vec<DomainSug
 
     // Create options for multi-select
     let options: Vec<String> = domains.iter().map(|d| {
-        format!("{} ({}%)", d.full_domain, (d.confidence * 100.0) as u8)
+        format!("{} ({}%)", d.get_full_domain(), (d.confidence * 100.0) as u8)
     }).collect();
 
     // Add special options
