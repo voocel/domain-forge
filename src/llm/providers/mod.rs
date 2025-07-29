@@ -75,7 +75,14 @@ Return ONLY a JSON array of objects with this format:
   }}
 ]
 
-Make sure each domain name is creative, memorable, and relevant to the description.",
+Make sure each domain name is creative, memorable, and relevant to the description. Generate diverse options including:
+- Short brandable names
+- Descriptive compound words  
+- Creative abbreviations
+- Industry-specific terms
+- Unique combinations
+
+Focus on variety and creativity.",
         config.count,
         config.description,
         config.style,

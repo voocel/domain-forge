@@ -170,7 +170,7 @@ async fn generate_random_domains(generator: &DomainGenerator) -> Result<Vec<Doma
 
     let config = GenerationConfig {
         description: prompt.to_string(),
-        count: 8,
+        count: 20,
         style: domain_forge::types::GenerationStyle::Creative,
         tlds: vec!["com".to_string(), "io".to_string(), "ai".to_string(), "app".to_string()],
         temperature: 0.8,
@@ -187,7 +187,7 @@ async fn generate_domains_for_description(generator: &DomainGenerator, descripti
 
     let config = GenerationConfig {
         description: description.to_string(),
-        count: 8,
+        count: 20,
         style: domain_forge::types::GenerationStyle::Creative,
         tlds: vec!["com".to_string(), "org".to_string(), "io".to_string(), "ai".to_string()],
         temperature: 0.7,
@@ -222,10 +222,11 @@ fn select_domains_to_check(domains: &[DomainSuggestion]) -> Result<Vec<DomainSug
         format!("{} ({}%)", d.get_full_domain(), (d.confidence * 100.0) as u8)
     }).collect();
 
-    // Add special options
-    let mut all_options = options.clone();
-    all_options.insert(0, "🔄 Generate new domains".to_string());
+    // Add special options - put "Select all" first for convenience
+    let mut all_options = Vec::new();
     all_options.push("✅ Select all domains".to_string());
+    all_options.push("🔄 Generate new domains".to_string());
+    all_options.extend(options);
 
     let selected = MultiSelect::new("Select domains to check availability:", all_options)
         .with_help_message("Use ↑↓ to navigate, Space to select, Enter to confirm")
@@ -233,17 +234,22 @@ fn select_domains_to_check(domains: &[DomainSuggestion]) -> Result<Vec<DomainSug
         .map_err(|e| domain_forge::DomainForgeError::cli(format!("Selection cancelled: {}", e)))?;
 
     // Handle special selections
-    if selected.contains(&"🔄 Generate new domains".to_string()) {
-        return Err(domain_forge::DomainForgeError::cli("Regeneration requested".to_string()));
-    }
-
     if selected.contains(&"✅ Select all domains".to_string()) {
         return Ok(domains.to_vec());
+    }
+
+    if selected.contains(&"🔄 Generate new domains".to_string()) {
+        return Err(domain_forge::DomainForgeError::cli("Regeneration requested".to_string()));
     }
 
     // Map selected options back to domains
     let mut selected_domains = Vec::new();
     for selection in selected {
+        // Skip special options when looking for domain matches
+        if selection.starts_with("✅") || selection.starts_with("🔄") {
+            continue;
+        }
+        
         if let Some(index) = options.iter().position(|opt| opt == &selection) {
             selected_domains.push(domains[index].clone());
         }

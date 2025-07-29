@@ -70,7 +70,7 @@ impl LlmProvider for OpenAiProvider {
                 },
             ],
             temperature: self.temperature,
-            max_tokens: 1000,
+            max_tokens: 2000,
         };
 
         let url = self.build_url("/chat/completions");
