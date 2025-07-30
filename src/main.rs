@@ -226,7 +226,7 @@ fn select_domains_to_check(domains: &[DomainSuggestion]) -> Result<Vec<DomainSug
     let mut all_options = Vec::new();
     all_options.push("✅ Select all domains".to_string());
     all_options.push("🔄 Generate new domains".to_string());
-    all_options.extend(options);
+    all_options.extend(options.clone());
 
     let selected = MultiSelect::new("Select domains to check availability:", all_options)
         .with_help_message("Use ↑↓ to navigate, Space to select, Enter to confirm")

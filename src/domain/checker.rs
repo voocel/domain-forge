@@ -17,7 +17,6 @@ use tokio::time::timeout;
 /// Domain availability checker with performance monitoring
 pub struct DomainChecker {
     config: CheckConfig,
-    client: Client,
     semaphore: Semaphore,
     rdap_client: Option<RdapClient>,
     whois_client: Option<WhoisClient>,
@@ -64,7 +63,6 @@ impl DomainChecker {
 
         Self {
             config,
-            client,
             semaphore,
             rdap_client,
             whois_client,
