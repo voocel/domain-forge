@@ -43,13 +43,31 @@ pub fn parse_domain_suggestions(content: &str, config: &GenerationConfig) -> Res
     for raw in raw_suggestions {
         let confidence = raw.confidence.unwrap_or(0.8);
         
-        for tld in &config.tlds {
-            suggestions.push(DomainSuggestion::new(
-                raw.name.clone(),
-                tld.clone(),
-                confidence,
-                raw.reasoning.clone(),
-            ));
+        // Check if the AI already returned a domain with TLD
+        if raw.name.contains('.') {
+            // Domain already has TLD, use as-is
+            let parts: Vec<&str> = raw.name.splitn(2, '.').collect();
+            if parts.len() == 2 {
+                let domain_name = parts[0].to_string();
+                let existing_tld = parts[1].to_string();
+                
+                suggestions.push(DomainSuggestion::new(
+                    domain_name,
+                    existing_tld,
+                    confidence,
+                    raw.reasoning.clone(),
+                ));
+            }
+        } else {
+            // Domain name only, combine with each TLD
+            for tld in &config.tlds {
+                suggestions.push(DomainSuggestion::new(
+                    raw.name.clone(),
+                    tld.clone(),
+                    confidence,
+                    raw.reasoning.clone(),
+                ));
+            }
         }
     }
 
@@ -66,6 +84,8 @@ pub fn build_domain_prompt(config: &GenerationConfig) -> String {
 Style: {}
 Target TLDs: {}
 
+IMPORTANT: Return ONLY the domain name WITHOUT the TLD extension. Do NOT include .com, .org, etc.
+
 Return ONLY a JSON array of objects with this format:
 [
   {{
@@ -74,6 +94,11 @@ Return ONLY a JSON array of objects with this format:
     \"confidence\": 0.85
   }}
 ]
+
+Examples of CORRECT format:
+- \"name\": \"techforge\"  (NOT \"techforge.com\")  
+- \"name\": \"innovate\"   (NOT \"innovate.io\")
+- \"name\": \"nexusai\"    (NOT \"nexusai.ai\")
 
 Make sure each domain name is creative, memorable, and relevant to the description. Generate diverse options including:
 - Short brandable names

@@ -230,6 +230,7 @@ fn select_domains_to_check(domains: &[DomainSuggestion]) -> Result<Vec<DomainSug
 
     let selected = MultiSelect::new("Select domains to check availability:", all_options)
         .with_help_message("Use ↑↓ to navigate, Space to select, Enter to confirm")
+        .with_page_size(15)
         .prompt()
         .map_err(|e| domain_forge::DomainForgeError::cli(format!("Selection cancelled: {}", e)))?;
 
