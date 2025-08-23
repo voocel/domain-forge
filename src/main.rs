@@ -9,7 +9,6 @@ use domain_forge::{
     types::{GenerationConfig, LlmConfig, DomainSuggestion, AvailabilityStatus},
     Result,
 };
-use inquire::MultiSelect;
 use rand::Rng;
 use std::env;
 use std::process;
@@ -70,16 +69,11 @@ async fn run_domain_forge(description: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Let user select domains to check
-    let selected_domains = select_domains_to_check(&domains)?;
+    // Display generated domains
+    display_generated_domains(&domains);
 
-    if selected_domains.is_empty() {
-        println!("👋 No domains selected. Goodbye!");
-        return Ok(());
-    }
-
-    // Check domain availability
-    check_domain_availability(&selected_domains).await?;
+    // Automatically check all generated domains
+    check_domain_availability_streamlined(&domains).await?;
 
     Ok(())
 }
@@ -198,11 +192,12 @@ async fn generate_domains_for_description(generator: &DomainGenerator, descripti
     generator.generate_with_fallback(&config).await
 }
 
-/// Let user select domains to check using beautiful multi-select interface
-fn select_domains_to_check(domains: &[DomainSuggestion]) -> Result<Vec<DomainSuggestion>> {
+/// Display generated domains in a clean format
+fn display_generated_domains(domains: &[DomainSuggestion]) {
     println!();
     println!("🎨 Generated Domains:");
     println!("═══════════════════");
+    println!();
 
     // Display domains with details
     for (i, domain) in domains.iter().enumerate() {
@@ -216,54 +211,13 @@ fn select_domains_to_check(domains: &[DomainSuggestion]) -> Result<Vec<DomainSug
         }
         println!();
     }
-
-    // Create options for multi-select
-    let options: Vec<String> = domains.iter().map(|d| {
-        format!("{} ({}%)", d.get_full_domain(), (d.confidence * 100.0) as u8)
-    }).collect();
-
-    // Add special options - put "Select all" first for convenience
-    let mut all_options = Vec::new();
-    all_options.push("✅ Select all domains".to_string());
-    all_options.push("🔄 Generate new domains".to_string());
-    all_options.extend(options.clone());
-
-    let selected = MultiSelect::new("Select domains to check availability:", all_options)
-        .with_help_message("Use ↑↓ to navigate, Space to select, Enter to confirm")
-        .with_page_size(15)
-        .prompt()
-        .map_err(|e| domain_forge::DomainForgeError::cli(format!("Selection cancelled: {}", e)))?;
-
-    // Handle special selections
-    if selected.contains(&"✅ Select all domains".to_string()) {
-        return Ok(domains.to_vec());
-    }
-
-    if selected.contains(&"🔄 Generate new domains".to_string()) {
-        return Err(domain_forge::DomainForgeError::cli("Regeneration requested".to_string()));
-    }
-
-    // Map selected options back to domains
-    let mut selected_domains = Vec::new();
-    for selection in selected {
-        // Skip special options when looking for domain matches
-        if selection.starts_with("✅") || selection.starts_with("🔄") {
-            continue;
-        }
-        
-        if let Some(index) = options.iter().position(|opt| opt == &selection) {
-            selected_domains.push(domains[index].clone());
-        }
-    }
-
-    Ok(selected_domains)
 }
 
-/// Check domain availability and display results beautifully
-async fn check_domain_availability(domains: &[DomainSuggestion]) -> Result<()> {
-    println!();
+/// Check domain availability and display results in streamlined format
+async fn check_domain_availability_streamlined(domains: &[DomainSuggestion]) -> Result<()> {
     println!("🔍 Checking domain availability...");
     println!("═══════════════════════════════════");
+    println!();
 
     let checker = DomainChecker::new();
     let domain_names: Vec<String> = domains.iter().map(|d| d.get_full_domain()).collect();
@@ -272,39 +226,63 @@ async fn check_domain_availability(domains: &[DomainSuggestion]) -> Result<()> {
     let results = checker.check_domains(&domain_names).await?;
     let check_duration = check_start.elapsed();
 
-    println!();
-    println!("📊 Results:");
-    println!("═══════════");
-
-    let mut available_count = 0;
-    let mut taken_count = 0;
+    let mut available_domains = Vec::new();
+    let mut taken_domains = Vec::new();
+    let mut error_domains = Vec::new();
 
     for (domain, result) in domains.iter().zip(results.iter()) {
         match result.status {
             AvailabilityStatus::Available => {
-                println!("✅ {} - AVAILABLE", domain.get_full_domain());
-                available_count += 1;
+                available_domains.push(domain);
             }
             AvailabilityStatus::Taken => {
-                println!("❌ {} - TAKEN", domain.get_full_domain());
-                if let Some(registrar) = &result.registrar {
-                    println!("   📝 Registrar: {}", registrar);
-                }
-                taken_count += 1;
+                taken_domains.push((domain, result));
             }
-            AvailabilityStatus::Unknown => {
-                println!("❓ {} - UNKNOWN", domain.get_full_domain());
-            }
-            AvailabilityStatus::Error => {
-                println!("⚠️  {} - ERROR", domain.get_full_domain());
-                if let Some(error) = &result.error_message {
-                    println!("   🔍 {}", error);
-                }
+            AvailabilityStatus::Unknown | AvailabilityStatus::Error => {
+                error_domains.push((domain, result));
             }
         }
+    }
 
-        if let Some(reasoning) = &domain.reasoning {
-            println!("   💭 {}", reasoning);
+    // Display available domains prominently
+    if !available_domains.is_empty() {
+        println!("🎉 Available Domains ({}):", available_domains.len());
+        println!("─────────────────────────");
+        for domain in &available_domains {
+            println!("✅ {} - AVAILABLE", domain.get_full_domain());
+            if let Some(reasoning) = &domain.reasoning {
+                println!("   💭 {}", reasoning);
+            }
+            println!();
+        }
+    }
+
+    // Display taken domains
+    if !taken_domains.is_empty() {
+        println!("❌ Taken Domains ({}):", taken_domains.len());
+        println!("─────────────────────");
+        for (domain, result) in &taken_domains {
+            print!("❌ {} - TAKEN", domain.get_full_domain());
+            if let Some(registrar) = &result.registrar {
+                print!(" ({})", registrar);
+            }
+            println!();
+        }
+        println!();
+    }
+
+    // Display error domains if any
+    if !error_domains.is_empty() {
+        println!("⚠️  Checking Issues ({}):", error_domains.len());
+        println!("───────────────────────");
+        for (domain, result) in &error_domains {
+            println!("⚠️  {} - {}", domain.get_full_domain(), 
+                match result.status {
+                    AvailabilityStatus::Unknown => "Status Unknown",
+                    AvailabilityStatus::Error => "Check Error",
+                    _ => "Unknown"
+                }
+            );
         }
         println!();
     }
@@ -313,17 +291,23 @@ async fn check_domain_availability(domains: &[DomainSuggestion]) -> Result<()> {
     let metrics = checker.get_metrics_snapshot();
     
     println!("📈 Summary:");
-    println!("   Available: {}", available_count);
-    println!("   Taken: {}", taken_count);
-    println!("   Total checked: {}", domains.len());
+    println!("   ✅ Available: {}", available_domains.len());
+    println!("   ❌ Taken: {}", taken_domains.len());
+    if !error_domains.is_empty() {
+        println!("   ⚠️  Issues: {}", error_domains.len());
+    }
+    println!("   📊 Total checked: {}", domains.len());
     println!("   ⏱️  Total time: {:.2}s", check_duration.as_secs_f32());
     if metrics.domains_checked > 0 {
         println!("   📊 Average check time: {:.1}ms", metrics.avg_check_time_ms());
     }
 
-    if available_count > 0 {
+    if !available_domains.is_empty() {
         println!();
-        println!("🎉 Great! You have {} available domain(s) to choose from!", available_count);
+        println!("🎉 Great! You have {} available domain(s) to choose from!", available_domains.len());
+    } else {
+        println!();
+        println!("😔 No available domains found. Try generating more options!");
     }
 
     Ok(())
