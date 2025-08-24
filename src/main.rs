@@ -179,11 +179,23 @@ async fn generate_random_domains(generator: &DomainGenerator) -> Result<Vec<Doma
 async fn generate_domains_for_description(generator: &DomainGenerator, description: &str) -> Result<Vec<DomainSuggestion>> {
     println!("🎯 Generating domains for: \"{}\"", description);
 
+    // Smart TLD detection based on user input
+    let tlds = if description.contains(".ai") || description.contains("AI域名") {
+        vec!["ai".to_string()]
+    } else if description.contains(".io") {
+        vec!["io".to_string()]
+    } else if description.contains(".com") {
+        vec!["com".to_string()]
+    } else {
+        // Default TLDs for general requests
+        vec!["com".to_string(), "org".to_string(), "io".to_string(), "ai".to_string()]
+    };
+
     let config = GenerationConfig {
         description: description.to_string(),
         count: 20,
         style: domain_forge::types::GenerationStyle::Creative,
-        tlds: vec!["com".to_string(), "org".to_string(), "io".to_string(), "ai".to_string()],
+        tlds,
         temperature: 0.7,
         ..Default::default()
     };
@@ -195,22 +207,26 @@ async fn generate_domains_for_description(generator: &DomainGenerator, descripti
 /// Display generated domains in a clean format
 fn display_generated_domains(domains: &[DomainSuggestion]) {
     println!();
-    println!("🎨 Generated Domains:");
+    println!("🎨 Generated Domains ({}):", domains.len());
     println!("═══════════════════");
-    println!();
-
-    // Display domains with details
-    for (i, domain) in domains.iter().enumerate() {
-        println!("{}. {} (confidence: {:.0}%)",
-            i + 1,
-            domain.get_full_domain(),
-            domain.confidence * 100.0
-        );
-        if let Some(reasoning) = &domain.reasoning {
-            println!("   💭 {}", reasoning);
+    
+    // Display domains in a compact grid format
+    let mut count = 0;
+    for domain in domains {
+        count += 1;
+        print!("{:2}. {:<18}", count, domain.get_full_domain());
+        
+        // New line every 3 domains for better readability
+        if count % 3 == 0 {
+            println!();
         }
+    }
+    
+    // Add final newline if needed
+    if domains.len() % 3 != 0 {
         println!();
     }
+    println!();
 }
 
 /// Check domain availability and display results in streamlined format

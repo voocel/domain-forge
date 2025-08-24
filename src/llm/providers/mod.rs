@@ -78,11 +78,27 @@ pub fn parse_domain_suggestions(content: &str, config: &GenerationConfig) -> Res
 pub fn build_domain_prompt(config: &GenerationConfig) -> String {
     let tld_list: Vec<&str> = config.tlds.iter().map(|s| s.as_str()).collect();
     
+    // Check if user is asking for specific length domains
+    let length_guidance = if config.description.contains("3个字母") || config.description.contains("3 letter") {
+        "\n\nSPECIAL REQUIREMENT: Generate ONLY 3-letter domain names (like \"api\", \"dev\", \"app\", \"bot\", \"web\")."
+    } else if config.description.contains("短") || config.description.contains("short") {
+        "\n\nFocus on SHORT domain names (3-6 letters preferred)."
+    } else {
+        ""
+    };
+
+    // Check if targeting .ai domains specifically
+    let ai_guidance = if tld_list.contains(&"ai") && (config.description.contains(".ai") || config.description.contains("AI")) {
+        "\n\nFor .ai domains: Generate names that work well with artificial intelligence context."
+    } else {
+        ""
+    };
+    
     format!(
         "Generate {} creative domain names for: {}
 
 Style: {}
-Target TLDs: {}
+Target TLDs: {}{}{}
 
 IMPORTANT: Return ONLY the domain name WITHOUT the TLD extension. Do NOT include .com, .org, etc.
 
@@ -90,27 +106,22 @@ Return ONLY a JSON array of objects with this format:
 [
   {{
     \"name\": \"domainname\",
-    \"reasoning\": \"why this name works\",
+    \"reasoning\": \"brief reason\",
     \"confidence\": 0.85
   }}
 ]
 
 Examples of CORRECT format:
-- \"name\": \"techforge\"  (NOT \"techforge.com\")  
-- \"name\": \"innovate\"   (NOT \"innovate.io\")
-- \"name\": \"nexusai\"    (NOT \"nexusai.ai\")
+- \"name\": \"api\"  (3 letters)
+- \"name\": \"dev\"  (3 letters)  
+- \"name\": \"app\"  (3 letters)
 
-Make sure each domain name is creative, memorable, and relevant to the description. Generate diverse options including:
-- Short brandable names
-- Descriptive compound words  
-- Creative abbreviations
-- Industry-specific terms
-- Unique combinations
-
-Focus on variety and creativity.",
+Generate diverse, creative, and memorable domain names that match the requirements exactly.",
         config.count,
         config.description,
         config.style,
-        tld_list.join(", ")
+        tld_list.join(", "),
+        length_guidance,
+        ai_guidance
     )
 }
