@@ -178,17 +178,8 @@ fn get_random_description() -> String {
 
 /// Generate domains for a single round, considering previous session state
 async fn generate_domains_for_round(generator: &DomainGenerator, description: &str, session: &DomainSession) -> Result<Vec<DomainSuggestion>> {
-    // Smart TLD detection based on user input
-    let tlds = if description.contains(".ai") || description.contains("AI域名") {
-        vec!["ai".to_string()]
-    } else if description.contains(".io") {
-        vec!["io".to_string()]
-    } else if description.contains(".com") {
-        vec!["com".to_string()]
-    } else {
-        // Default TLDs for general requests
-        vec!["com".to_string(), "org".to_string(), "io".to_string(), "ai".to_string()]
-    };
+    // Let LLM handle everything - it's smart enough to understand user intent
+    let tlds = vec!["com".to_string(), "org".to_string(), "io".to_string(), "ai".to_string(), "tech".to_string(), "dev".to_string(), "app".to_string()];
 
     let config = GenerationConfig {
         description: description.to_string(),

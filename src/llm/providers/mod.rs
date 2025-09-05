@@ -25,9 +25,8 @@ pub struct DomainSuggestionRaw {
     pub confidence: Option<f32>,
 }
 
-/// Parse domain suggestions from AI response text
-pub fn parse_domain_suggestions(content: &str, config: &GenerationConfig) -> Result<Vec<DomainSuggestion>> {
-    // Try to extract JSON from the response
+/// Parse domain suggestions from AI response - trust LLM completely
+pub fn parse_domain_suggestions(content: &str, _config: &GenerationConfig) -> Result<Vec<DomainSuggestion>> {
     let json_start = content.find('[').unwrap_or(0);
     let json_end = content.rfind(']').map(|i| i + 1).unwrap_or(content.len());
     let json_content = &content[json_start..json_end];
@@ -39,98 +38,66 @@ pub fn parse_domain_suggestions(content: &str, config: &GenerationConfig) -> Res
         ))?;
 
     let mut suggestions = Vec::new();
-    
+
     for raw in raw_suggestions {
         let confidence = raw.confidence.unwrap_or(0.8);
-        
-        // Check if the AI already returned a domain with TLD
+
+        // LLM must return complete domain names with TLD
         if raw.name.contains('.') {
-            // Domain already has TLD, use as-is
             let parts: Vec<&str> = raw.name.splitn(2, '.').collect();
             if parts.len() == 2 {
-                let domain_name = parts[0].to_string();
-                let existing_tld = parts[1].to_string();
-                
                 suggestions.push(DomainSuggestion::new(
-                    domain_name,
-                    existing_tld,
+                    parts[0].to_string(),
+                    parts[1].to_string(),
                     confidence,
                     raw.reasoning.clone(),
                 ));
             }
         } else {
-            // Domain name only, combine with each TLD
-            for tld in &config.tlds {
-                suggestions.push(DomainSuggestion::new(
-                    raw.name.clone(),
-                    tld.clone(),
-                    confidence,
-                    raw.reasoning.clone(),
-                ));
-            }
+            // If LLM didn't return complete domain, it's an error
+            return Err(crate::error::DomainForgeError::parse(
+                format!("LLM returned incomplete domain '{}' - expected format: 'name.tld'", raw.name),
+                Some(content.to_string())
+            ));
         }
+    }
+
+    if suggestions.is_empty() {
+        return Err(crate::error::DomainForgeError::parse(
+            "No valid complete domain names found in LLM response".to_string(),
+            Some(content.to_string())
+        ));
     }
 
     Ok(suggestions)
 }
 
-/// Build domain generation prompt
+/// Build domain generation prompt - trust LLM's intelligence completely
 pub fn build_domain_prompt(config: &GenerationConfig) -> String {
-    let tld_list: Vec<&str> = config.tlds.iter().map(|s| s.as_str()).collect();
-    
-    // Check if user is asking for specific length domains
-    let length_guidance = if config.description.contains("3个字母") || config.description.contains("3 letter") {
-        "\n\nSPECIAL REQUIREMENT: Generate ONLY 3-letter domain names (like \"api\", \"dev\", \"app\", \"bot\", \"web\")."
-    } else if config.description.contains("短") || config.description.contains("short") {
-        "\n\nFocus on SHORT domain names (3-6 letters preferred)."
-    } else {
-        ""
-    };
-
-    // Check if targeting .ai domains specifically
-    let ai_guidance = if tld_list.contains(&"ai") && (config.description.contains(".ai") || config.description.contains("AI")) {
-        "\n\nFor .ai domains: Generate names that work well with artificial intelligence context."
-    } else {
-        ""
-    };
-    
-    // Add avoidance list if we have domains to avoid
-    let avoidance_guidance = if !config.avoid_names.is_empty() {
-        let avoid_list = config.avoid_names.join("\", \"");
-        format!("\n\nIMPORTANT: DO NOT generate these domain names (they are already taken): \"{}\"\nGenerate completely different and original names instead.", avoid_list)
+    let avoid_guidance = if !config.avoid_names.is_empty() {
+        format!("\n\nAvoid these taken names: {}", config.avoid_names.join(", "))
     } else {
         String::new()
     };
-    
+
     format!(
-        "Generate {} creative domain names for: {}
+        "Generate {} domain names for: {}
 
 Style: {}
-Target TLDs: {}{}{}{}
+Available TLDs: {}{}
 
-IMPORTANT: Return ONLY the domain name WITHOUT the TLD extension. Do NOT include .com, .org, etc.
-
-Return ONLY a JSON array of objects with this format:
+Return complete domain names as JSON:
 [
   {{
-    \"name\": \"domainname\",
-    \"reasoning\": \"brief reason\",
+    \"name\": \"example.com\",
+    \"reasoning\": \"brief explanation\",
     \"confidence\": 0.85
   }}
-]
-
-Examples of CORRECT format:
-- \"name\": \"api\"  (3 letters)
-- \"name\": \"dev\"  (3 letters)  
-- \"name\": \"app\"  (3 letters)
-
-Generate diverse, creative, and memorable domain names that match the requirements exactly.",
+]",
         config.count,
         config.description,
         config.style,
-        tld_list.join(", "),
-        length_guidance,
-        ai_guidance,
-        avoidance_guidance
+        config.tlds.join(", "),
+        avoid_guidance
     )
 }
