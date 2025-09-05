@@ -170,6 +170,7 @@ pub struct GenerationConfig {
     pub tlds: Vec<String>,
     pub temperature: f32,
     pub description: String,
+    pub avoid_names: Vec<String>, // Domain names to avoid (without TLD)
 }
 
 impl Default for GenerationConfig {
@@ -181,6 +182,7 @@ impl Default for GenerationConfig {
             tlds: vec!["com".to_string(), "org".to_string(), "io".to_string()],
             temperature: 0.7,
             description: "".to_string(),
+            avoid_names: Vec::new(),
         }
     }
 }
@@ -298,5 +300,71 @@ impl MetricsSnapshot {
         } else {
             self.total_check_time_ms as f64 / self.domains_checked as f64
         }
+    }
+}
+
+/// Multi-round domain generation session
+#[derive(Debug, Clone)]
+pub struct DomainSession {
+    pub available_domains: Vec<DomainSuggestion>,
+    pub taken_domains: std::collections::HashSet<String>,
+    pub error_domains: Vec<(String, String)>, // domain, error_message
+    pub round_count: u32,
+    pub total_time: Duration,
+    pub total_generated: u32,
+}
+
+impl DomainSession {
+    pub fn new() -> Self {
+        Self {
+            available_domains: Vec::new(),
+            taken_domains: std::collections::HashSet::new(),
+            error_domains: Vec::new(),
+            round_count: 0,
+            total_time: Duration::from_secs(0),
+            total_generated: 0,
+        }
+    }
+    
+    pub fn add_round_results(&mut self, domains: &[DomainSuggestion], results: &[DomainResult], round_time: Duration) {
+        self.round_count += 1;
+        self.total_time += round_time;
+        self.total_generated += domains.len() as u32;
+        
+        for (domain, result) in domains.iter().zip(results.iter()) {
+            match result.status {
+                AvailabilityStatus::Available => {
+                    self.available_domains.push(domain.clone());
+                }
+                AvailabilityStatus::Taken => {
+                    self.taken_domains.insert(domain.get_full_domain());
+                }
+                AvailabilityStatus::Unknown | AvailabilityStatus::Error => {
+                    let error_msg = result.error_message.as_deref().unwrap_or("Unknown error");
+                    self.error_domains.push((domain.get_full_domain(), error_msg.to_string()));
+                }
+            }
+        }
+    }
+    
+    pub fn get_taken_domain_names(&self) -> Vec<String> {
+        self.taken_domains.iter().map(|d| {
+            // Extract just the domain name without TLD for AI prompt
+            if let Some(dot_pos) = d.find('.') {
+                d[..dot_pos].to_string()
+            } else {
+                d.clone()
+            }
+        }).collect()
+    }
+    
+    pub fn total_domains_checked(&self) -> u32 {
+        self.available_domains.len() as u32 + self.taken_domains.len() as u32 + self.error_domains.len() as u32
+    }
+}
+
+impl Default for DomainSession {
+    fn default() -> Self {
+        Self::new()
     }
 }

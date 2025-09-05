@@ -94,11 +94,19 @@ pub fn build_domain_prompt(config: &GenerationConfig) -> String {
         ""
     };
     
+    // Add avoidance list if we have domains to avoid
+    let avoidance_guidance = if !config.avoid_names.is_empty() {
+        let avoid_list = config.avoid_names.join("\", \"");
+        format!("\n\nIMPORTANT: DO NOT generate these domain names (they are already taken): \"{}\"\nGenerate completely different and original names instead.", avoid_list)
+    } else {
+        String::new()
+    };
+    
     format!(
         "Generate {} creative domain names for: {}
 
 Style: {}
-Target TLDs: {}{}{}
+Target TLDs: {}{}{}{}
 
 IMPORTANT: Return ONLY the domain name WITHOUT the TLD extension. Do NOT include .com, .org, etc.
 
@@ -122,6 +130,7 @@ Generate diverse, creative, and memorable domain names that match the requiremen
         config.style,
         tld_list.join(", "),
         length_guidance,
-        ai_guidance
+        ai_guidance,
+        avoidance_guidance
     )
 }
