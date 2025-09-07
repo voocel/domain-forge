@@ -9,11 +9,13 @@ use domain_forge::{
     types::{GenerationConfig, LlmConfig, DomainSuggestion, AvailabilityStatus, DomainSession, DomainResult},
     Result,
 };
+use indicatif::{ProgressBar, ProgressStyle};
 use inquire::Select;
 use rand::Rng;
 use std::env;
 use std::process;
 use std::io;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 enum MenuOption {
@@ -97,10 +99,22 @@ async fn run_domain_forge(description: &str) -> Result<()> {
             break;
         }
 
-        // Check domain availability
+        // Check domain availability with beautiful progress
         let checker = DomainChecker::new();
         let domain_names: Vec<String> = domains.iter().map(|d| d.get_full_domain()).collect();
+
+        let check_pb = ProgressBar::new_spinner();
+        check_pb.set_style(
+            ProgressStyle::default_spinner()
+                .tick_strings(&["🔍", "🔎", "🕵️", "🔍", "🔎", "🕵️"])
+                .template("{spinner:.green} {msg}")
+                .unwrap()
+        );
+        check_pb.enable_steady_tick(Duration::from_millis(100));
+        check_pb.set_message(format!("🔍 Checking {} domains for availability...", domain_names.len()));
+
         let results = checker.check_domains(&domain_names).await?;
+        check_pb.finish_with_message("✅ Domain availability check complete!");
         let round_time = round_start.elapsed();
 
         // Update session with results
@@ -176,6 +190,21 @@ fn get_random_description() -> String {
     prompt.to_string()
 }
 
+/// Create a beautiful progress bar for AI generation
+fn create_ai_progress_bar() -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .tick_strings(&["🤖", "🧠", "💭", "✨", "🎯", "🔮", "⚡", "🚀"])
+            .template("{spinner:.blue} {msg}")
+            .unwrap()
+    );
+    pb.enable_steady_tick(Duration::from_millis(120));
+    pb
+}
+
+
+
 /// Generate domains for a single round, considering previous session state
 async fn generate_domains_for_round(generator: &DomainGenerator, description: &str, session: &DomainSession) -> Result<Vec<DomainSuggestion>> {
     // Let LLM handle everything - it's smart enough to understand user intent
@@ -191,14 +220,19 @@ async fn generate_domains_for_round(generator: &DomainGenerator, description: &s
         ..Default::default()
     };
 
+    // Show beautiful progress for AI generation
+    let pb = create_ai_progress_bar();
     if session.round_count == 0 {
-        println!("🤖 Generating domains with AI...");
+        pb.set_message("🎨 AI is crafting creative domain names...");
     } else {
-        println!("🤖 Generating {} more domains (avoiding {} taken ones)...", 
-            config.count, session.taken_domains.len());
+        pb.set_message(format!("🎨 Generating {} more domains (avoiding {} taken ones)...",
+            config.count, session.taken_domains.len()));
     }
-    
-    generator.generate_with_fallback(&config).await
+
+    let result = generator.generate_with_fallback(&config).await;
+    pb.finish_with_message("✅ Domain generation complete!");
+
+    result
 }
 
 /// Setup LLM providers from environment variables

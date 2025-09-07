@@ -221,10 +221,10 @@ impl DomainChecker {
         let batch_start = Instant::now();
         let futures = domains.iter().map(|domain| self.check_domain(domain));
         let results = join_all(futures).await;
-        
+
         let mut success_results = Vec::new();
         let mut error_count = 0u32;
-        
+
         for (domain, result) in domains.iter().zip(results.iter()) {
             match result {
                 Ok(domain_result) => success_results.push(domain_result.clone()),
@@ -234,7 +234,7 @@ impl DomainChecker {
                 }
             }
         }
-        
+
         let batch_duration = batch_start.elapsed();
         tracing::info!(
             domains_requested = %domains.len(),
@@ -244,7 +244,7 @@ impl DomainChecker {
             avg_duration_ms = %(batch_duration.as_millis() / domains.len().max(1) as u128),
             "Batch domain check completed"
         );
-        
+
         Ok(success_results)
     }
 

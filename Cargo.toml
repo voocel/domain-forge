@@ -27,6 +27,7 @@ thiserror = "1.0"
 
 # Terminal UI - beautiful interactive prompts
 inquire = "0.7.5"
+indicatif = "0.17"
 
 # Environment variables
 dotenv = "0.15"
