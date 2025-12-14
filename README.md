@@ -6,8 +6,9 @@ A CLI tool that generates domain names and checks their availability in real-tim
 
 ## Features
 
-- **Domain Generation**: Generate domain names using OpenAI, Anthropic, Gemini, or Ollama
+- **AI Domain Generation**: Generate domain names using OpenAI, Anthropic, Gemini, or Ollama
 - **Real-time Availability Checking**: Check domain availability using RDAP and WHOIS protocols
+- **Domain Sniping**: Scan for available short domains (4-letter or 5-letter meaningful words)
 - **Beautiful Terminal UI**: Interactive multi-select interface with inquire
 - **Simple & Fast**: Minimal setup, maximum productivity
 - **Multi-Provider Support**: OpenAI, Anthropic, Google Gemini, and Ollama support
@@ -48,9 +49,65 @@ export GEMINI_API_KEY="your-gemini-api-key"
 
 # Generate domains for your idea
 ./target/release/domain-forge "AI-powered productivity app"
+
+# Snipe 5-letter meaningful word domains (recommended!)
+./target/release/domain-forge snipe -w --tld com
 ```
 
-## How It Works
+## Domain Sniping
+
+Scan for available short domains using the `snipe` command:
+
+### Scan Modes
+
+| Mode | Flag | Domains | Description |
+|------|------|---------|-------------|
+| Full | (none) | ~456k | All 4-letter combinations (aaaa-zzzz) |
+| Pronounceable | `-p` | ~137k | 4-letter pronounceable patterns (CVCV, etc.) |
+| **Words** | `-w` | ~10k | 5-letter meaningful words (recommended!) |
+
+### Usage
+
+```bash
+# 5-letter meaningful words (recommended!)
+./target/release/domain-forge snipe -w --tld com
+
+# Scan multiple TLDs
+./target/release/domain-forge snipe -w --tld com,io,ai
+
+# Increase concurrency for faster scanning
+./target/release/domain-forge snipe -w -c 30
+
+# 4-letter pronounceable patterns
+./target/release/domain-forge snipe -p --tld com
+
+# Resume interrupted scan
+./target/release/domain-forge snipe -w -r
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-w, --words` | Scan 5-letter meaningful words (recommended) |
+| `-p, --pronounceable` | Scan 4-letter pronounceable patterns |
+| `-t, --tld <TLD>` | TLDs to scan (comma-separated, default: com) |
+| `-c, --concurrency <N>` | Concurrent checks (default: 15) |
+| `-r, --resume` | Resume previous scan |
+| `-e, --expiring <DAYS>` | Days threshold for expiring soon (default: 7) |
+
+### Word List
+
+The 5-letter word list includes ~10,000 high-value domains:
+
+- **Common words**: cloud, pixel, forge, spark, alpha...
+- **Tech terms**: bytes, nodes, cache, async, react...
+- **Brandable**: zippy, happy, bingo, turbo, promo...
+- **Brand-style**: ifish, ebook, xcode, uplay, myapp...
+
+Results are saved to `output/` directory.
+
+## AI Domain Generation
 
 ### Without Arguments (Random Generation)
 ```bash
@@ -76,9 +133,9 @@ The tool provides a beautiful terminal interface:
 Domain Forge - Domain name generation
 ═══════════════════════════════════════════════════
 
-✅ OpenAI provider configured
+OpenAI provider configured
 → Generating domains for: "productivity tool"
-⏳ Processing request...
+Processing request...
 
 Generated Domains:
 ═══════════════════
@@ -89,10 +146,10 @@ Generated Domains:
    Analysis: Combines task management concept
 
 ? Select domains to check availability:
-❯ ◯ 🔄 Generate more options
+❯ ◯ Generate more options
   ◯ productiv.com (85%)
   ◯ taskforge.io (92%)
-  ◯ ✅ Check all domains
+  ◯ Check all domains
 ```
 
 ## Configuration
@@ -135,35 +192,6 @@ export OLLAMA_MODEL="deepseek-r1"
 ./target/release/domain-forge "indie game studio"
 ./target/release/domain-forge "digital art marketplace"
 ./target/release/domain-forge "music streaming service"
-```
-
-## Project Structure
-
-```
-domain-forge/
-├── src/
-│   ├── main.rs           # Main program entry
-│   ├── lib.rs            # Library entry
-│   ├── types.rs          # Type definitions
-│   ├── error.rs          # Error handling
-│   ├── domain/           # Domain checking module
-│   │   ├── mod.rs
-│   │   ├── checker.rs
-│   │   ├── rdap.rs
-│   │   ├── whois.rs
-│   │   └── validator.rs
-│   └── llm/              # LLM module
-│       ├── mod.rs
-│       ├── generator.rs
-│       └── providers/    # Each provider in separate file
-│           ├── mod.rs
-│           ├── openai.rs
-│           ├── anthropic.rs
-│           ├── gemini.rs
-│           └── ollama.rs
-├── Cargo.toml            # Dependencies configuration
-├── README.md             # Project documentation
-└── demo.sh               # Demo script
 ```
 
 ## Development

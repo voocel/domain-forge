@@ -6,6 +6,7 @@
 use domain_forge::{
     domain::DomainChecker,
     llm::DomainGenerator,
+    snipe::{DomainSniper, SnipeConfig, Charset, ScanState, ScanMode},
     types::{GenerationConfig, LlmConfig, DomainSuggestion, AvailabilityStatus, DomainSession, DomainResult},
     Result,
 };
@@ -40,7 +41,7 @@ impl std::fmt::Display for MenuOption {
 async fn main() -> Result<()> {
     // Initialize the library
     if let Err(e) = domain_forge::init() {
-        eprintln!("❌ Failed to initialize: {}", e);
+        eprintln!("Failed to initialize: {}", e);
         process::exit(1);
     }
 
@@ -53,6 +54,11 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Check for snipe subcommand
+    if args.len() > 1 && args[1] == "snipe" {
+        return run_snipe_command(&args[2..]).await;
+    }
+
     // Determine if user provided a description
     let description = if args.len() > 1 {
         args[1..].join(" ")
@@ -62,7 +68,7 @@ async fn main() -> Result<()> {
 
     // Run the main flow
     if let Err(e) = run_domain_forge(&description).await {
-        eprintln!("❌ Error: {}", e);
+        eprintln!("Error: {}", e);
         process::exit(1);
     }
 
@@ -304,33 +310,32 @@ fn setup_llm_providers(generator: &mut DomainGenerator) -> Result<()> {
 
 /// Print help information
 fn print_help() {
-    println!("🔥 Domain Forge - AI-powered domain name generation");
-    println!("═══════════════════════════════════════════════════");
+    println!("Domain Forge - AI-powered domain name generation");
+    println!("=================================================");
     println!();
     println!("USAGE:");
-    println!("    domain-forge [DESCRIPTION]");
+    println!("    domain-forge [DESCRIPTION]       Generate domains for description");
+    println!("    domain-forge snipe [OPTIONS]     Scan for available short domains");
+    println!();
+    println!("SNIPE MODES:");
+    println!("    domain-forge snipe                    Full 4-letter scan (all 456k)");
+    println!("    domain-forge snipe -p                 4-letter pronounceable (~137k)");
+    println!("    domain-forge snipe -w                 5-letter meaningful words (~5k)");
+    println!();
+    println!("SNIPE OPTIONS:");
+    println!("    -w, --words           Scan 5-letter meaningful words (recommended!)");
+    println!("    -p, --pronounceable   Scan 4-letter pronounceable patterns");
+    println!("    -t, --tld <TLD>       TLDs to scan (comma-separated, default: com)");
+    println!("    -c, --concurrency <N> Concurrent checks (default: 15)");
+    println!("    -r, --resume          Resume previous scan");
+    println!("    -e, --expiring <DAYS> Days threshold for expiring soon (default: 7)");
     println!();
     println!("EXAMPLES:");
-    println!("    domain-forge                           # Generate random domains");
-    println!("    domain-forge \"AI productivity app\"     # Generate for description");
-    println!("    domain-forge \"fintech startup\"        # Generate for startup idea");
+    println!("    domain-forge snipe -w --tld com,io    # 5-letter words on .com/.io");
+    println!("    domain-forge snipe -w -c 30           # 5-letter words, 30 concurrent");
+    println!("    domain-forge \"AI productivity app\"    # AI-generated domains");
     println!();
-    println!("ENVIRONMENT VARIABLES:");
-    println!("    OPENAI_API_KEY     OpenAI API key");
-    println!("    ANTHROPIC_API_KEY  Anthropic API key");
-    println!("    GEMINI_API_KEY     Google Gemini API key");
-    println!();
-    println!("    OPENAI_MODEL       OpenAI model (default: gpt-4.1-mini)");
-    println!("    ANTHROPIC_MODEL    Anthropic model (default: claude-4-sonnet)");
-    println!("    GEMINI_MODEL       Gemini model (default: gemini-2.5-flash)");
-    println!();
-    println!("FEATURES:");
-    println!("    • AI-powered domain generation using OpenAI, Anthropic, Gemini, or Ollama");
-    println!("    • Beautiful interactive multi-select interface");
-    println!("    • Real-time domain availability checking");
-    println!("    • Support for multiple TLDs (.com, .org, .io, .ai)");
-    println!();
-    println!("Made with ❤️ and 🦀 Rust");
+    println!("Made with Rust");
 }
 
 // ===== Beautiful Terminal UI Functions =====
@@ -489,9 +494,12 @@ fn show_available_domains_only(session: &DomainSession) {
 /// Save results to a file
 fn save_results_to_file(session: &DomainSession, description: &str) -> io::Result<()> {
     use std::fs;
-    
+
+    // Ensure output directory exists
+    fs::create_dir_all("output")?;
+
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-    let filename = format!("domains_{}.txt", timestamp);
+    let filename = format!("output/domains_{}.txt", timestamp);
     
     let mut content = String::new();
     content.push_str(&format!("Domain Forge Results\n"));
@@ -523,16 +531,222 @@ fn save_results_to_file(session: &DomainSession, description: &str) -> io::Resul
     }
     
     fs::write(&filename, content)?;
-    
+
     println!();
-    println!("╭─ File Saved ──────────────────────────────────────────╮");
-    println!("│                                                       │");
-    println!("│  💾 Results saved to: {:<28}│", filename);
-    println!("│                                                       │");
-    println!("│  📊 {} available domains                              │", session.available_domains.len());
-    println!("│  📊 {} taken domains                                  │", session.taken_domains.len());
-    println!("│                                                       │");
-    println!("╰───────────────────────────────────────────────────────╯");
-    
+    println!("File saved to: {}", filename);
+    println!("  {} available domains", session.available_domains.len());
+    println!("  {} taken domains", session.taken_domains.len());
+
     Ok(())
 }
+
+// ===== Snipe Command =====
+
+/// Parse snipe command arguments
+fn parse_snipe_args(args: &[String]) -> SnipeConfig {
+    let mut config = SnipeConfig::default();
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--tld" | "-t" => {
+                if i + 1 < args.len() {
+                    config.tlds = args[i + 1]
+                        .split(',')
+                        .map(|s| s.trim().to_lowercase())
+                        .collect();
+                    i += 1;
+                }
+            }
+            "--resume" | "-r" => {
+                config.state_file = Some(ScanState::default_path(config.length));
+            }
+            "--alphanumeric" | "-a" => {
+                config.charset = Charset::Alphanumeric;
+            }
+            "--pronounceable" | "-p" => {
+                config.mode = ScanMode::Pronounceable;
+            }
+            "--words" | "-w" => {
+                config.mode = ScanMode::Words;
+            }
+            "--concurrency" | "-c" => {
+                if i + 1 < args.len() {
+                    if let Ok(n) = args[i + 1].parse() {
+                        config.concurrency = n;
+                    }
+                    i += 1;
+                }
+            }
+            "--expiring" | "-e" => {
+                if i + 1 < args.len() {
+                    if let Ok(n) = args[i + 1].parse() {
+                        config.expiring_days = n;
+                    }
+                    i += 1;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    config
+}
+
+/// Run the snipe command
+async fn run_snipe_command(args: &[String]) -> Result<()> {
+    let config = parse_snipe_args(args);
+
+    // Check for unsupported TLDs
+    let supported_tlds = ["com", "net", "org", "io", "ai", "tech", "app", "dev", "xyz", "co", "me"];
+    let unsupported: Vec<_> = config.tlds.iter()
+        .filter(|tld| !supported_tlds.contains(&tld.as_str()))
+        .collect();
+
+    if !unsupported.is_empty() {
+        println!("⚠️  Warning: Unsupported TLDs will be skipped: {}",
+            unsupported.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
+        println!("   Supported TLDs: {}", supported_tlds.join(", "));
+        println!();
+    }
+
+    let mode_title = match config.mode {
+        ScanMode::Full => "4-letter domain scanner",
+        ScanMode::Pronounceable => "4-letter pronounceable scanner",
+        ScanMode::Words => "5-letter word scanner",
+    };
+
+    println!("Domain Sniper - {}", mode_title);
+    println!("{}", "=".repeat(40 + mode_title.len()));
+    println!();
+
+    // Check if resuming
+    let is_resume = config.state_file.is_some()
+        && config.state_file.as_ref().map(|p| p.exists()).unwrap_or(false);
+
+    let mut sniper = if is_resume {
+        println!("Resuming previous scan...");
+        match DomainSniper::resume(config.clone()) {
+            Ok(s) => {
+                println!("  Loaded state: {:.1}% complete", s.state().progress_percent());
+                println!("  Found so far: {} available, {} expiring",
+                    s.state().available.len(),
+                    s.state().expiring_soon.len());
+                s
+            }
+            Err(e) => {
+                println!("  Failed to resume: {}", e);
+                println!("  Starting fresh scan...");
+                DomainSniper::new(config.clone())
+            }
+        }
+    } else {
+        DomainSniper::new(config.clone())
+    };
+
+    let total = sniper.state().total_combinations;
+    let mode_name = match config.mode {
+        ScanMode::Full => match config.charset {
+            Charset::Letters => "all combinations (a-z)",
+            Charset::Alphanumeric => "all combinations (a-z, 0-9)",
+        },
+        ScanMode::Pronounceable => "pronounceable patterns (CVCV)",
+        ScanMode::Words => "meaningful 5-letter words",
+    };
+
+    let length = match config.mode {
+        ScanMode::Words => 5,
+        _ => 4,
+    };
+
+    println!("Scan Configuration:");
+    println!("  Length:      {} characters", length);
+    println!("  Mode:        {}", mode_name);
+    println!("  TLDs:        {}", config.tlds.join(", "));
+    println!("  Total:       {} domains", total);
+    println!("  Concurrency: {}", config.concurrency);
+    println!();
+
+    // Create progress bar
+    let pb = ProgressBar::new(total);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) | {msg}"
+        )
+        .unwrap()
+        .progress_chars("=>-")
+    );
+    pb.enable_steady_tick(Duration::from_millis(200));
+
+    // Run the scan
+    let result = sniper.run(|progress| {
+        pb.set_position(progress.current);
+        pb.set_message(format!(
+            "{:.1}/s | {} avail | {} expiring",
+            progress.domains_per_second,
+            progress.available_count,
+            progress.expiring_count
+        ));
+    }).await;
+
+    pb.finish_with_message("Scan complete!");
+
+    match result {
+        Ok(state) => {
+            println!();
+            println!("Scan Results");
+            println!("============");
+            println!();
+
+            // Show available domains
+            if state.available.is_empty() {
+                println!("No available domains found.");
+            } else {
+                println!("Available Domains ({}):", state.available.len());
+                for domain in &state.available {
+                    println!("  {} - {}", domain.full_domain, domain.found_at.format("%Y-%m-%d %H:%M"));
+                }
+            }
+
+            // Show expiring domains
+            if !state.expiring_soon.is_empty() {
+                println!();
+                println!("Expiring Soon ({}):", state.expiring_soon.len());
+                for domain in &state.expiring_soon {
+                    let days = domain.days_until_expiry.unwrap_or(0);
+                    let registrar = domain.registrar.as_deref().unwrap_or("unknown");
+                    println!("  {} - {} days left ({})", domain.full_domain, days, registrar);
+                }
+            }
+
+            // Summary
+            println!();
+            println!("Summary:");
+            println!("  Checked:     {}", state.checked_count);
+            println!("  Available:   {}", state.available.len());
+            println!("  Expiring:    {}", state.expiring_soon.len());
+            println!("  Errors:      {}", state.error_count);
+            println!("  Elapsed:     {:?}", state.elapsed());
+
+            // Save results
+            std::fs::create_dir_all("output").ok();
+            let results_file = format!("output/snipe_results_{}.json",
+                chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+            if let Err(e) = std::fs::write(&results_file, serde_json::to_string_pretty(&state).unwrap_or_default()) {
+                eprintln!("Failed to save results: {}", e);
+            } else {
+                println!();
+                println!("Results saved to: {}", results_file);
+            }
+        }
+        Err(e) => {
+            eprintln!("Scan failed: {}", e);
+            // State is auto-saved, can resume later
+            println!("Progress has been saved. Use --resume to continue.");
+        }
+    }
+
+    Ok(())
+}
+

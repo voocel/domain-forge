@@ -5,6 +5,7 @@
 pub mod domain;
 pub mod error;
 pub mod llm;
+pub mod snipe;
 pub mod types;
 
 // Re-export commonly used types
