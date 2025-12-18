@@ -14,24 +14,7 @@ use super::state::{ScanState, SnipedDomain};
 use super::words::WordGenerator;
 use super::Charset;
 use crate::error::Result;
-
-/// Get RDAP URL for a TLD
-fn get_rdap_url(tld: &str) -> Option<&'static str> {
-    match tld {
-        "com" => Some("https://rdap.verisign.com/com/v1/"),
-        "net" => Some("https://rdap.verisign.com/net/v1/"),
-        "org" => Some("https://rdap.org.org/"),
-        "io" => Some("https://rdap.nic.io/"),
-        "ai" => Some("https://rdap.nic.ai/"),
-        "tech" => Some("https://rdap.nic.tech/"),
-        "app" => Some("https://rdap.nic.google/"),
-        "dev" => Some("https://rdap.nic.google/"),
-        "xyz" => Some("https://rdap.nic.xyz/"),
-        "co" => Some("https://rdap.nic.co/"),
-        "me" => Some("https://rdap.nic.me/"),
-        _ => None,
-    }
-}
+use crate::rdap::registry::rdap_base_url;
 
 /// Scan mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -402,7 +385,7 @@ impl DomainSniper {
                 async move {
                     let _permit = semaphore.acquire().await.ok()?;
 
-                    let rdap_url = get_rdap_url(&tld)?;
+                    let rdap_url = rdap_base_url(&tld)?;
                     let url = format!("{}domain/{}", rdap_url, full_domain);
 
                     match client.get(&url).send().await {

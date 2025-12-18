@@ -60,7 +60,7 @@ assert_cmd = "2.0"
 predicates = "3.0"
 
 [features]
-default = ["rdap", "whois"]
+default = ["rdap"]
 
 # Domain checking protocols
 rdap = []

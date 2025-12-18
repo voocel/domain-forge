@@ -2,10 +2,9 @@
 
 use domain_forge::{
     domain::DomainChecker,
-    llm::{DomainGenerator, LlmConfig},
+    llm::DomainGenerator,
     types::{
-        CheckConfig, GenerationConfig, GenerationStyle,
-        LlmProvider, AvailabilityStatus
+        AvailabilityStatus, CheckConfig, GenerationConfig, GenerationStyle, LlmConfig, LlmProvider,
     },
 };
 use std::time::Duration;
@@ -84,8 +83,6 @@ async fn test_llm_config_creation() {
         api_key: "test-key".to_string(),
         base_url: None,
         temperature: 0.7,
-        max_tokens: 1000,
-        timeout_secs: 30,
     };
 
     assert_eq!(config.provider, "openai");
@@ -101,12 +98,8 @@ async fn test_generation_config_creation() {
         style: GenerationStyle::Creative,
         tlds: vec!["com".to_string(), "io".to_string()],
         temperature: 0.7,
-        max_tokens: 1000,
         description: "Test app".to_string(),
-        keywords: vec!["test".to_string()],
-        avoid_words: vec!["bad".to_string()],
-        min_length: 3,
-        max_length: 15,
+        avoid_names: Vec::new(),
     };
 
     assert_eq!(config.count, 5);

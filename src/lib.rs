@@ -5,6 +5,7 @@
 pub mod domain;
 pub mod error;
 pub mod llm;
+pub mod rdap;
 pub mod snipe;
 pub mod types;
 

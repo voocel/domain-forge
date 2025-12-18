@@ -2,13 +2,12 @@
 
 use crate::domain::DomainValidator;
 use crate::error::{DomainForgeError, Result};
+use crate::rdap::registry::rdap_base_url;
 use crate::types::{AvailabilityStatus, CheckConfig, CheckMethod, DomainResult, PerformanceMetrics};
 use chrono::{DateTime, Utc};
 use futures::future::join_all;
 use reqwest::Client;
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
@@ -19,6 +18,7 @@ pub struct DomainChecker {
     config: CheckConfig,
     semaphore: Semaphore,
     rdap_client: Option<RdapClient>,
+    #[cfg(feature = "whois")]
     whois_client: Option<WhoisClient>,
     validator: DomainValidator,
     metrics: Arc<PerformanceMetrics>,
@@ -52,6 +52,7 @@ impl DomainChecker {
             None
         };
 
+        #[cfg(feature = "whois")]
         let whois_client = if config.enable_whois {
             Some(WhoisClient::new())
         } else {
@@ -65,6 +66,7 @@ impl DomainChecker {
             config,
             semaphore,
             rdap_client,
+            #[cfg(feature = "whois")]
             whois_client,
             validator,
             metrics,
@@ -137,14 +139,15 @@ impl DomainChecker {
             }
         }
 
-        // Fall back to WHOIS
+        // Fall back to WHOIS (optional feature)
+        #[cfg(feature = "whois")]
         if let Some(whois_client) = &self.whois_client {
             match whois_client.check_domain(&validated.get_full_domain()).await {
                 Ok(result) => {
                     let duration = start_time.elapsed();
                     self.metrics.increment_domains_checked();
                     self.metrics.add_check_time(duration.as_millis() as u64);
-                    
+
                     tracing::debug!(
                         domain = %domain,
                         method = "whois",
@@ -152,7 +155,7 @@ impl DomainChecker {
                         duration_ms = %duration.as_millis(),
                         "Domain check completed"
                     );
-                    
+
                     return Ok(DomainResult {
                         domain: validated.get_full_domain(),
                         status: result.status,
@@ -168,13 +171,13 @@ impl DomainChecker {
                 }
                 Err(e) => {
                     tracing::debug!(domain = %domain, method = "whois", error = %e, "WHOIS check failed");
-                    
+
                     // If WHOIS suggests domain is available, return that
                     if e.suggests_available() {
                         let duration = start_time.elapsed();
                         self.metrics.increment_domains_checked();
                         self.metrics.add_check_time(duration.as_millis() as u64);
-                        
+
                         return Ok(DomainResult {
                             domain: validated.get_full_domain(),
                             status: AvailabilityStatus::Available,
@@ -255,7 +258,18 @@ impl DomainChecker {
 
     /// Check if checker is configured properly
     pub fn is_configured(&self) -> bool {
-        self.rdap_client.is_some() || self.whois_client.is_some()
+        let has_whois = {
+            #[cfg(feature = "whois")]
+            {
+                self.whois_client.is_some()
+            }
+            #[cfg(not(feature = "whois"))]
+            {
+                false
+            }
+        };
+
+        self.rdap_client.is_some() || has_whois
     }
     
     /// Get performance metrics
@@ -278,27 +292,12 @@ impl Default for DomainChecker {
 /// RDAP client for domain checking
 struct RdapClient {
     client: Client,
-    rdap_servers: HashMap<String, String>,
 }
 
 impl RdapClient {
     fn new(client: Client) -> Self {
-        let mut rdap_servers = HashMap::new();
-        
-        // Popular RDAP servers
-        rdap_servers.insert("com".to_string(), "https://rdap.verisign.com/com/v1/".to_string());
-        rdap_servers.insert("org".to_string(), "https://rdap.org.org/".to_string());
-        rdap_servers.insert("net".to_string(), "https://rdap.verisign.com/net/v1/".to_string());
-        rdap_servers.insert("io".to_string(), "https://rdap.nic.io/".to_string());
-        rdap_servers.insert("ai".to_string(), "https://rdap.nic.ai/".to_string());
-        rdap_servers.insert("tech".to_string(), "https://rdap.nic.tech/".to_string());
-        rdap_servers.insert("app".to_string(), "https://rdap.nic.google/".to_string());
-        rdap_servers.insert("dev".to_string(), "https://rdap.nic.google/".to_string());
-        rdap_servers.insert("xyz".to_string(), "https://rdap.nic.xyz/".to_string());
-        
         Self {
             client,
-            rdap_servers,
         }
     }
 
@@ -307,12 +306,13 @@ impl RdapClient {
         let tld = domain.split('.').last()
             .ok_or_else(|| DomainForgeError::validation("Invalid domain format - no TLD found".to_string()))?;
             
-        let rdap_url = self.rdap_servers.get(tld)
-            .ok_or_else(|| DomainForgeError::domain_check(
+        let rdap_url = rdap_base_url(tld).ok_or_else(|| {
+            DomainForgeError::domain_check(
                 domain.to_string(),
                 format!("No RDAP server found for TLD: {}", tld),
                 Some("rdap".to_string()),
-            ))?;
+            )
+        })?;
 
         let url = format!("{}domain/{}", rdap_url, domain);
         
@@ -401,46 +401,42 @@ impl RdapClient {
     }
 }
 
-/// WHOIS client for domain checking
+/// WHOIS client for domain checking (optional feature)
+#[cfg(feature = "whois")]
 struct WhoisClient;
 
+#[cfg(feature = "whois")]
 impl WhoisClient {
     fn new() -> Self {
         Self
     }
 
     async fn check_domain(&self, domain: &str) -> Result<DomainCheckResult> {
-        let output = timeout(
-            Duration::from_secs(15),
-            tokio::task::spawn_blocking({
-                let domain = domain.to_string();
-                move || {
-                    Command::new("whois")
-                        .arg(&domain)
-                        .output()
-                }
-            })
-        ).await
-        .map_err(|_| DomainForgeError::timeout("WHOIS request", 15))?
-        .map_err(|e| DomainForgeError::internal(format!("Failed to spawn WHOIS command: {}", e)))?
-        .map_err(|e| DomainForgeError::domain_check(
-            domain.to_string(),
-            format!("WHOIS command failed: {}", e),
-            Some("whois".to_string()),
-        ))?;
+        // Pure Rust WHOIS over TCP/43 (no external `whois` binary required).
+        let tld = domain
+            .split('.')
+            .last()
+            .ok_or_else(|| DomainForgeError::validation("Invalid domain format - no TLD found".to_string()))?
+            .to_lowercase();
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let server = self.whois_server_for_tld(&tld).unwrap_or_else(|| "whois.iana.org".to_string());
 
-        if !output.status.success() {
-            return Err(DomainForgeError::domain_check(
-                domain.to_string(),
-                format!("WHOIS command failed: {}", stderr),
-                Some("whois".to_string()),
-            ));
-        }
+        // If unknown TLD, ask IANA first to discover the authoritative WHOIS server.
+        let raw = if server == "whois.iana.org" {
+            let iana = self.query_whois("whois.iana.org", &tld).await?;
+            let discovered = Self::parse_iana_whois_server(&iana)
+                .or_else(|| Self::parse_iana_refer_server(&iana))
+                .ok_or_else(|| DomainForgeError::domain_check(
+                    domain.to_string(),
+                    format!("No WHOIS server found for TLD: {}", tld),
+                    Some("whois".to_string()),
+                ))?;
+            self.query_whois(&discovered, domain).await?
+        } else {
+            self.query_whois(&server, domain).await?
+        };
 
-        self.parse_whois_response(&stdout, domain)
+        self.parse_whois_response(&raw, domain)
     }
 
     fn parse_whois_response(&self, output: &str, _domain: &str) -> Result<DomainCheckResult> {
@@ -543,6 +539,73 @@ impl WhoisClient {
 
         None
     }
+
+    fn whois_server_for_tld(&self, tld: &str) -> Option<String> {
+        // Minimal convention-based mapping for high-usage TLDs.
+        // Unknown TLDs fall back to IANA discovery (no extra user config).
+        match tld {
+            "com" | "net" => Some("whois.verisign-grs.com".to_string()),
+            "org" => Some("whois.pir.org".to_string()),
+            "io" => Some("whois.nic.io".to_string()),
+            "ai" => Some("whois.nic.ai".to_string()),
+            "co" => Some("whois.nic.co".to_string()),
+            "me" => Some("whois.nic.me".to_string()),
+            "xyz" => Some("whois.nic.xyz".to_string()),
+            _ => None,
+        }
+    }
+
+    async fn query_whois(&self, server: &str, query: &str) -> Result<String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpStream;
+
+        let addr = format!("{}:43", server);
+        let mut stream = timeout(Duration::from_secs(10), TcpStream::connect(&addr))
+            .await
+            .map_err(|_| DomainForgeError::timeout("WHOIS connect", 10))?
+            .map_err(|e| DomainForgeError::network(format!("WHOIS connect failed: {}", e), None, Some(addr.clone())))?;
+
+        timeout(Duration::from_secs(10), stream.write_all(format!("{}\r\n", query).as_bytes()))
+            .await
+            .map_err(|_| DomainForgeError::timeout("WHOIS write", 10))?
+            .map_err(|e| DomainForgeError::network(format!("WHOIS write failed: {}", e), None, Some(addr.clone())))?;
+
+        let mut buf = Vec::new();
+        timeout(Duration::from_secs(10), stream.read_to_end(&mut buf))
+            .await
+            .map_err(|_| DomainForgeError::timeout("WHOIS read", 10))?
+            .map_err(|e| DomainForgeError::network(format!("WHOIS read failed: {}", e), None, Some(addr)))?;
+
+        Ok(String::from_utf8_lossy(&buf).to_string())
+    }
+
+    fn parse_iana_whois_server(iana: &str) -> Option<String> {
+        iana.lines()
+            .map(str::trim)
+            .find_map(|line| {
+                let lower = line.to_lowercase();
+                if lower.starts_with("whois:") {
+                    Some(line.splitn(2, ':').nth(1)?.trim().to_string())
+                } else {
+                    None
+                }
+            })
+            .filter(|s| !s.is_empty())
+    }
+
+    fn parse_iana_refer_server(iana: &str) -> Option<String> {
+        iana.lines()
+            .map(str::trim)
+            .find_map(|line| {
+                let lower = line.to_lowercase();
+                if lower.starts_with("refer:") {
+                    Some(line.splitn(2, ':').nth(1)?.trim().to_string())
+                } else {
+                    None
+                }
+            })
+            .filter(|s| !s.is_empty())
+    }
 }
 
 /// Domain check result
@@ -613,14 +676,37 @@ mod tests {
     #[test]
     fn test_rdap_client_creation() {
         let client = Client::new();
-        let rdap_client = RdapClient::new(client);
-        assert!(rdap_client.rdap_servers.contains_key("com"));
+        let _rdap_client = RdapClient::new(client);
+        assert!(crate::rdap::registry::rdap_base_url("com").is_some());
     }
 
     #[test]
     fn test_whois_client_creation() {
-        let whois_client = WhoisClient::new();
-        // Just test that it creates successfully
+        // WHOIS is optional and may be disabled at compile time
         assert!(true);
+    }
+
+    #[cfg(feature = "whois")]
+    #[test]
+    fn test_iana_whois_parsing() {
+        let sample = r#"
+domain:       COM
+organisation: Verisign Global Registry Services
+whois:        whois.verisign-grs.com
+status:       ACTIVE
+"#;
+        assert_eq!(
+            WhoisClient::parse_iana_whois_server(sample).as_deref(),
+            Some("whois.verisign-grs.com")
+        );
+    }
+
+    #[cfg(feature = "whois")]
+    #[test]
+    fn test_iana_refer_parsing() {
+        let sample = r#"
+refer: whois.nic.io
+"#;
+        assert_eq!(WhoisClient::parse_iana_refer_server(sample).as_deref(), Some("whois.nic.io"));
     }
 }
