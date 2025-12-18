@@ -2,6 +2,19 @@
 //!
 //! Focuses on valuable, pronounceable, memorable words
 
+/// Vowels used in pronounceable patterns.
+///
+/// Keep this to the most common vowels to reduce "weird" combos and keep
+/// the overall `-w` search space reasonable.
+const VOWELS: &[char] = &['a', 'e', 'i', 'o'];
+
+/// A smaller subset (more "English-like") to keep output size reasonable.
+///
+/// This is intentionally tighter than the 4-letter pronounceable set.
+const CORE_CONSONANTS: &[char] = &[
+    'b', 'c', 'd', 'f', 'g', 'h', 'l', 'm', 'n', 'p', 'r', 's', 't', 'w',
+];
+
 /// Common 5-letter English words (high value for domains)
 pub const COMMON_WORDS: &[&str] = &[
     // Tech & Startup
@@ -182,6 +195,14 @@ impl WordGenerator {
         }
 
         // Deduplicate and sort
+        // Keep only strict 5-letter ASCII lowercase candidates.
+        // (Curated lists may contain 4-letter items like "vibe" — filter them out.)
+        words.retain(|w| w.len() == 5 && w.chars().all(|c| c.is_ascii_lowercase()));
+
+        // Expand: add pronounceable 5-letter patterns using a restricted consonant set.
+        // This increases coverage of brandable names without requiring extra CLI flags.
+        words.extend(generate_pronounceable_5_letter());
+
         words.sort();
         words.dedup();
 
@@ -272,6 +293,42 @@ impl Iterator for WordGenerator {
             Some(word)
         }
     }
+}
+
+fn generate_pronounceable_5_letter() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+
+    // Pattern: CVCVC (e.g. "borep", "lavig", "mopet")
+    // Use CORE_CONSONANTS to keep the space manageable.
+    for &c1 in CORE_CONSONANTS {
+        for &v1 in VOWELS {
+            for &c2 in CORE_CONSONANTS {
+                for &v2 in VOWELS {
+                    for &c3 in CORE_CONSONANTS {
+                        out.push([c1, v1, c2, v2, c3].iter().collect());
+                    }
+                }
+            }
+        }
+    }
+
+    // Pattern: VCVCV (e.g. "aleta", "opico")
+    // Keep the same restricted consonant set to avoid ballooning the list size.
+    for &v1 in VOWELS {
+        for &c1 in CORE_CONSONANTS {
+            for &v2 in VOWELS {
+                for &c2 in CORE_CONSONANTS {
+                    for &v3 in VOWELS {
+                        out.push([v1, c1, v2, c2, v3].iter().collect());
+                    }
+                }
+            }
+        }
+    }
+
+    // Filter to strict 5-letter lowercase (defensive), then return.
+    out.retain(|w| w.len() == 5 && w.chars().all(|c| c.is_ascii_lowercase()));
+    out
 }
 
 #[cfg(test)]

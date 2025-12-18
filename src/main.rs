@@ -14,8 +14,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use inquire::Select;
 use rand::Rng;
 use std::env;
-use std::process;
 use std::io;
+use std::process;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -316,19 +316,25 @@ fn print_help() {
     println!("USAGE:");
     println!("    domain-forge [DESCRIPTION]       Generate domains for description");
     println!("    domain-forge snipe [OPTIONS]     Scan for available short domains");
+    println!("    domain-forge snipe recheck <RESULT_JSON...>  Recheck & update saved results in-place");
     println!();
     println!("SNIPE MODES:");
     println!("    domain-forge snipe                    Full 4-letter scan (all 456k)");
     println!("    domain-forge snipe -p                 4-letter pronounceable (~137k)");
     println!("    domain-forge snipe -w                 5-letter meaningful words (~5k)");
+    println!("    domain-forge snipe --six              6-letter pronounceable (~351k)");
     println!();
     println!("SNIPE OPTIONS:");
     println!("    -w, --words           Scan 5-letter meaningful words (recommended!)");
     println!("    -p, --pronounceable   Scan 4-letter pronounceable patterns");
+    println!("        --six             Scan 6-letter pronounceable patterns");
     println!("    -t, --tld <TLD>       TLDs to scan (comma-separated, default: com)");
     println!("    -c, --concurrency <N> Concurrent checks (default: 15)");
     println!("    -r, --resume          Resume previous scan");
     println!("    -e, --expiring <DAYS> Days threshold for expiring soon (default: 7)");
+    println!();
+    println!("SNIPE RECHECK:");
+    println!("    domain-forge snipe recheck output/snipe_results_*.json");
     println!();
     println!("EXAMPLES:");
     println!("    domain-forge snipe -w --tld com,io    # 5-letter words on .com/.io");
@@ -570,6 +576,9 @@ fn parse_snipe_args(args: &[String]) -> SnipeConfig {
             "--words" | "-w" => {
                 config.mode = ScanMode::Words;
             }
+            "--six" | "-6" => {
+                config.mode = ScanMode::Six;
+            }
             "--concurrency" | "-c" => {
                 if i + 1 < args.len() {
                     if let Ok(n) = args[i + 1].parse() {
@@ -596,6 +605,11 @@ fn parse_snipe_args(args: &[String]) -> SnipeConfig {
 
 /// Run the snipe command
 async fn run_snipe_command(args: &[String]) -> Result<()> {
+    // Subcommand: recheck expiring_soon in existing result files
+    if args.first().map(|s| s.as_str()) == Some("recheck") {
+        return run_snipe_recheck_command(&args[1..]).await;
+    }
+
     let config = parse_snipe_args(args);
 
     // Check for unsupported TLDs
@@ -615,6 +629,7 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
         ScanMode::Full => "4-letter domain scanner",
         ScanMode::Pronounceable => "4-letter pronounceable scanner",
         ScanMode::Words => "5-letter word scanner",
+        ScanMode::Six => "6-letter pronounceable scanner",
     };
 
     println!("Domain Sniper - {}", mode_title);
@@ -630,8 +645,9 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
         match DomainSniper::resume(config.clone()) {
             Ok(s) => {
                 println!("  Loaded state: {:.1}% complete", s.state().progress_percent());
-                println!("  Found so far: {} available, {} expiring",
+                println!("  Found so far: {} available, {} expired, {} expiring",
                     s.state().available.len(),
+                    s.state().expired.len(),
                     s.state().expiring_soon.len());
                 s
             }
@@ -653,10 +669,12 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
         },
         ScanMode::Pronounceable => "pronounceable patterns (CVCV)",
         ScanMode::Words => "meaningful 5-letter words",
+        ScanMode::Six => "pronounceable 6-letter patterns (CVCVCV/VCVCVC)",
     };
 
     let length = match config.mode {
         ScanMode::Words => 5,
+        ScanMode::Six => 6,
         _ => 4,
     };
 
@@ -683,10 +701,11 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
     let result = sniper.run(|progress| {
         pb.set_position(progress.current);
         pb.set_message(format!(
-            "{:.1}/s | {} avail | {} expiring",
+            "{:.1}/s | {} avail | {} expiring | {} expired",
             progress.domains_per_second,
             progress.available_count,
-            progress.expiring_count
+            progress.expiring_count,
+            progress.expired_count
         ));
     }).await;
 
@@ -726,6 +745,7 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
             println!("  Checked:     {}", state.checked_count);
             println!("  Available:   {}", state.available.len());
             println!("  Expiring:    {}", state.expiring_soon.len());
+            println!("  Expired:     {}", state.expired.len());
             println!("  Errors:      {}", state.error_count);
             println!("  Elapsed:     {:?}", state.elapsed());
 
@@ -745,6 +765,90 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
             // State is auto-saved, can resume later
             println!("Progress has been saved. Use --resume to continue.");
         }
+    }
+
+    Ok(())
+}
+
+async fn run_snipe_recheck_command(args: &[String]) -> Result<()> {
+    // Minimal UX: only takes result files and updates them in-place.
+    // Defaults match snipe defaults.
+    let concurrency: usize = 15;
+    let expiring_days: u32 = 7;
+
+    let files: Vec<&str> = args
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if files.is_empty() {
+        return Err(domain_forge::DomainForgeError::cli(
+            "No result files provided. Usage: domain-forge snipe recheck <RESULT_JSON...>".to_string(),
+        ));
+    }
+
+    println!("Snipe Recheck - update saved results");
+    println!("====================================");
+    println!("  Files:       {}", files.len());
+    println!("  Concurrency: {}", concurrency);
+    println!("  Expiring:    {} days", expiring_days);
+    println!("  Write:       in-place");
+    println!();
+
+    for path in files {
+        println!("Rechecking: {}", path);
+
+        let mut state = ScanState::load(std::path::Path::new(path))?;
+        let before_expired = state.expired.len();
+        let before_expiring = state.expiring_soon.len();
+        let before_available = state.available.len();
+
+        let report = domain_forge::snipe::recheck_expiring_soon(
+            &mut state,
+            expiring_days,
+            concurrency,
+        )
+        .await?;
+
+        // Pretty summary panel
+        println!("╭─ Recheck Summary ─────────────────────────────────────╮");
+        println!(
+            "│  expiring_soon: {:>5} → {:<5}  (→available {:<4}  →expired {:<4}  kept {:<4}) │",
+            before_expiring,
+            state.expiring_soon.len(),
+            report.expiring_now_available,
+            report.already_expired,
+            report.expiring_errors_kept
+        );
+        println!(
+            "│  expired:       {:>5} → {:<5}  (→available {:<4}  →expiring {:<4} kept {:<4}) │",
+            before_expired,
+            state.expired.len(),
+            report.expired_now_available,
+            report.expired_now_expiring,
+            report.expired_errors_kept
+        );
+        println!(
+            "│  available:     {:>5} → {:<5}  (→expiring {:<4}  removed {:<4} kept {:<4}) │",
+            before_available,
+            state.available.len(),
+            report.available_now_expiring,
+            report.no_longer_available,
+            report.available_errors_kept
+        );
+        println!(
+            "│  updated_at: {}  (history: {}) │",
+            state.updated_at.format("%Y-%m-%d %H:%M:%S UTC"),
+            state.update_times.len()
+        );
+        println!("╰───────────────────────────────────────────────────────╯");
+
+        // Always overwrite the input file.
+        state.save(std::path::Path::new(path))?;
+        println!("  Saved: {}", path);
+
+        println!();
     }
 
     Ok(())

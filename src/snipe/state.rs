@@ -9,6 +9,10 @@ use crate::error::{DomainForgeError, Result};
 /// Persistent scan state
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanState {
+    /// Recheck/update timestamps history (append-only).
+    /// This is used by `snipe recheck` to record each update time.
+    #[serde(default)]
+    pub update_times: Vec<DateTime<Utc>>,
     /// Scan identifier
     pub scan_id: String,
     /// Domain length being scanned
@@ -21,6 +25,11 @@ pub struct ScanState {
     pub total_combinations: u64,
     /// Available domains found
     pub available: Vec<SnipedDomain>,
+    /// Domains that appear expired (expiration_date <= now) but are not yet available (RDAP still returns 200).
+    ///
+    /// These are often high-value to monitor because they may transition to available later.
+    #[serde(default)]
+    pub expired: Vec<SnipedDomain>,
     /// Domains expiring soon
     pub expiring_soon: Vec<SnipedDomain>,
     /// Number of domains checked
@@ -44,6 +53,10 @@ pub struct SnipedDomain {
     pub expiration_date: Option<DateTime<Utc>>,
     pub days_until_expiry: Option<i64>,
     pub registrar: Option<String>,
+    /// RDAP status values (e.g. "active", "pendingDelete", "redemptionPeriod").
+    /// Kept as a list because RDAP can return multiple statuses.
+    #[serde(default)]
+    pub rdap_status: Vec<String>,
     pub found_at: DateTime<Utc>,
 }
 
@@ -52,12 +65,14 @@ impl ScanState {
     pub fn new(length: usize, tlds: Vec<String>, total_combinations: u64) -> Self {
         let now = Utc::now();
         Self {
+            update_times: Vec::new(),
             scan_id: format!("scan_{}_{}", length, now.format("%Y%m%d_%H%M%S")),
             length,
             tlds,
             current_index: 0,
             total_combinations,
             available: Vec::new(),
+            expired: Vec::new(),
             expiring_soon: Vec::new(),
             checked_count: 0,
             error_count: 0,
