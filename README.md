@@ -63,8 +63,10 @@ Scan for available short domains using the `snipe` command:
 | Mode | Flag | Domains | Description |
 |------|------|---------|-------------|
 | Full | (none) | ~456k | All 4-letter combinations (aaaa-zzzz) |
+| Full N-letter | `-l N` | varies | All N-letter combinations (2-10) |
 | Pronounceable | `-p` | ~137k | 4-letter pronounceable patterns (CVCV, etc.) |
 | **Words** | `-w` | ~10k | 5-letter meaningful words (recommended!) |
+| Six | `--six` | ~351k | 6-letter pronounceable patterns |
 
 ### Usage
 
@@ -72,29 +74,67 @@ Scan for available short domains using the `snipe` command:
 # 5-letter meaningful words (recommended!)
 ./target/release/domain-forge snipe -w --tld com
 
-# Scan multiple TLDs
-./target/release/domain-forge snipe -w --tld com,io,ai
-
-# Increase concurrency for faster scanning
-./target/release/domain-forge snipe -w -c 30
+# 3-letter domains on .ai
+./target/release/domain-forge snipe -l 3 --tld ai
 
 # 4-letter pronounceable patterns
 ./target/release/domain-forge snipe -p --tld com
 
+# 4-letter all combinations
+./target/release/domain-forge snipe --tld com
+
+# 6-letter pronounceable patterns
+./target/release/domain-forge snipe --six --tld com
+
+# Scan multiple TLDs
+./target/release/domain-forge snipe -w --tld com,io,ai
+
+# Adjust concurrency and rate limit (for strict servers like .ai)
+./target/release/domain-forge snipe -l 3 --tld ai -c 5 --rate 1000
+
 # Resume interrupted scan
 ./target/release/domain-forge snipe -w -r
+```
+
+### Recommended Commands by TLD
+
+```bash
+# .com / .net / .org (fast servers, can use higher concurrency)
+./target/release/domain-forge snipe -l 3 --tld com -c 20 --rate 200
+./target/release/domain-forge snipe -p --tld com -c 20 --rate 200
+
+# .ai (strict rate limiting, use conservative settings)
+./target/release/domain-forge snipe -l 3 --tld ai -c 5 --rate 1000
+./target/release/domain-forge snipe -l 4 --tld ai -c 3 --rate 2000
+
+# .io / .co / .me (moderate rate limiting)
+./target/release/domain-forge snipe -l 3 --tld io -c 10 --rate 500
+
+# Multiple TLDs (use conservative settings)
+./target/release/domain-forge snipe -w --tld com,io,ai -c 10 --rate 500
 ```
 
 ### Options
 
 | Option | Description |
 |--------|-------------|
+| `-l, --length <N>` | Domain length to scan (2-10, default: 4) |
 | `-w, --words` | Scan 5-letter meaningful words (recommended) |
 | `-p, --pronounceable` | Scan 4-letter pronounceable patterns |
+| `--six` | Scan 6-letter pronounceable patterns |
 | `-t, --tld <TLD>` | TLDs to scan (comma-separated, default: com) |
-| `-c, --concurrency <N>` | Concurrent checks (default: 15) |
+| `-a, --alphanumeric` | Include digits (a-z, 0-9) |
+| `-c, --concurrency <N>` | Concurrent checks (default: 20) |
+| `--rate <MS>` | Delay between batches in ms (default: 500) |
 | `-r, --resume` | Resume previous scan |
 | `-e, --expiring <DAYS>` | Days threshold for expiring soon (default: 7) |
+
+### Recheck Results
+
+```bash
+# Recheck and update saved results
+./target/release/domain-forge snipe recheck output/snipe_results_*.json
+```
 
 ### Word List
 

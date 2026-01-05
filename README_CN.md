@@ -65,8 +65,10 @@ export GEMINI_API_KEY="your-gemini-api-key"
 | 模式 | 参数 | 域名数量 | 说明 |
 |------|------|----------|------|
 | 全量扫描 | (无) | ~456k | 所有4字母组合 (aaaa-zzzz) |
+| N字母扫描 | `-l N` | 可变 | 所有N字母组合 (2-10) |
 | 可发音 | `-p` | ~137k | 4字母可发音模式 (CVCV等) |
 | **词库** | `-w` | ~10k | 5字母有意义单词（推荐！） |
+| 6字母 | `--six` | ~351k | 6字母可发音模式 |
 
 ### 使用方法
 
@@ -74,29 +76,67 @@ export GEMINI_API_KEY="your-gemini-api-key"
 # 5字母有意义单词（推荐！）
 ./target/release/domain-forge snipe -w --tld com
 
-# 扫描多个TLD
-./target/release/domain-forge snipe -w --tld com,io,ai
-
-# 增加并发数提速
-./target/release/domain-forge snipe -w -c 30
+# 3字母 .ai 域名
+./target/release/domain-forge snipe -l 3 --tld ai
 
 # 4字母可发音模式
 ./target/release/domain-forge snipe -p --tld com
 
+# 4字母全量扫描
+./target/release/domain-forge snipe --tld com
+
+# 6字母可发音模式
+./target/release/domain-forge snipe --six --tld com
+
+# 扫描多个TLD
+./target/release/domain-forge snipe -w --tld com,io,ai
+
+# 调整并发和速率限制（针对限流严格的服务器如 .ai）
+./target/release/domain-forge snipe -l 3 --tld ai -c 5 --rate 1000
+
 # 恢复中断的扫描
 ./target/release/domain-forge snipe -w -r
+```
+
+### 按 TLD 推荐的最优命令
+
+```bash
+# .com / .net / .org（服务器快，可用高并发）
+./target/release/domain-forge snipe -l 3 --tld com -c 20 --rate 200
+./target/release/domain-forge snipe -p --tld com -c 20 --rate 200
+
+# .ai（限流严格，使用保守设置）
+./target/release/domain-forge snipe -l 3 --tld ai -c 5 --rate 1000
+./target/release/domain-forge snipe -l 4 --tld ai -c 3 --rate 2000
+
+# .io / .co / .me（中等限流）
+./target/release/domain-forge snipe -l 3 --tld io -c 10 --rate 500
+
+# 多 TLD 扫描（使用保守设置）
+./target/release/domain-forge snipe -w --tld com,io,ai -c 10 --rate 500
 ```
 
 ### 参数说明
 
 | 参数 | 说明 |
 |------|------|
+| `-l, --length <N>` | 域名长度 (2-10，默认: 4) |
 | `-w, --words` | 扫描5字母有意义单词（推荐） |
 | `-p, --pronounceable` | 扫描4字母可发音模式 |
+| `--six` | 扫描6字母可发音模式 |
 | `-t, --tld <TLD>` | 要扫描的TLD（逗号分隔，默认: com） |
-| `-c, --concurrency <N>` | 并发数（默认: 15） |
+| `-a, --alphanumeric` | 包含数字 (a-z, 0-9) |
+| `-c, --concurrency <N>` | 并发数（默认: 20） |
+| `--rate <MS>` | 批次间延迟毫秒数（默认: 500） |
 | `-r, --resume` | 恢复上次扫描 |
 | `-e, --expiring <DAYS>` | 即将过期天数阈值（默认: 7） |
+
+### 重新检查结果
+
+```bash
+# 重新检查并更新已保存的结果
+./target/release/domain-forge snipe recheck output/snipe_results_*.json
+```
 
 ### 词库内容
 
