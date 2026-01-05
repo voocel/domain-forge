@@ -11,7 +11,7 @@ use tokio::sync::Semaphore;
 use super::filter::PronounceableGenerator;
 use super::generator::DomainGenerator;
 use super::six::SixLetterGenerator;
-use super::state::{ScanState, SnipedDomain};
+use super::state::{ScanState, SnipedDomain, FailedDomain};
 use super::words::WordGenerator;
 use super::Charset;
 use crate::error::Result;
@@ -55,6 +55,7 @@ pub struct SnipeResult {
     pub days_until_expiry: Option<i64>,
     pub registrar: Option<String>,
     pub rdap_status: Vec<String>,
+    pub error_message: Option<String>,
 }
 
 /// Snipe configuration
@@ -92,12 +93,12 @@ impl Default for SnipeConfig {
             tlds: vec!["com".to_string()],
             charset: Charset::Letters,
             pronounceable: false,
-            concurrency: 15,
+            concurrency: 20,
             batch_size: 100,
             expiring_days: 7,
             state_file: None,
             save_interval: 1000,
-            rate_limit_ms: 100,
+            rate_limit_ms: 500,
         }
     }
 }
@@ -207,7 +208,8 @@ impl DomainSniper {
         let state = ScanState::new(length, config.tlds.clone(), total);
         let semaphore = Arc::new(Semaphore::new(config.concurrency));
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(15))
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
             .pool_max_idle_per_host(config.concurrency)
             .build()
             .expect("Failed to create HTTP client");
@@ -247,7 +249,8 @@ impl DomainSniper {
 
         let semaphore = Arc::new(Semaphore::new(config.concurrency));
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(15))
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
             .pool_max_idle_per_host(config.concurrency)
             .build()
             .expect("Failed to create HTTP client");
@@ -335,7 +338,13 @@ impl DomainSniper {
                         });
                     }
                     SnipeStatus::Error => {
-                        self.state.error_count += 1;
+                        self.state.add_error(FailedDomain {
+                            domain: result.domain.clone(),
+                            tld: result.tld.clone(),
+                            full_domain: result.full_domain.clone(),
+                            error: result.error_message.clone().unwrap_or_else(|| "Unknown error".to_string()),
+                            failed_at: Utc::now(),
+                        });
                     }
                     SnipeStatus::Taken => {
                         // Track "expired but not yet available" separately for monitoring.
@@ -447,6 +456,7 @@ impl DomainSniper {
                                     days_until_expiry: None,
                                     registrar: None,
                                     rdap_status: Vec::new(),
+                                    error_message: None,
                                 })
                             } else if status_code == 200 {
                                 // Domain is taken, try to get expiration
@@ -487,6 +497,7 @@ impl DomainSniper {
                                     days_until_expiry: days_until,
                                     registrar,
                                     rdap_status,
+                                    error_message: None,
                                 })
                             } else {
                                 Some(SnipeResult {
@@ -498,10 +509,11 @@ impl DomainSniper {
                                     days_until_expiry: None,
                                     registrar: None,
                                     rdap_status: Vec::new(),
+                                    error_message: Some(format!("HTTP {}", status_code)),
                                 })
                             }
                         }
-                        Err(_) => Some(SnipeResult {
+                        Err(e) => Some(SnipeResult {
                             domain: name,
                             tld,
                             full_domain,
@@ -510,6 +522,7 @@ impl DomainSniper {
                             days_until_expiry: None,
                             registrar: None,
                             rdap_status: Vec::new(),
+                            error_message: Some(e.to_string()),
                         }),
                     }
                 }
@@ -645,7 +658,8 @@ pub async fn recheck_expiring_soon(
 
     let semaphore = Arc::new(Semaphore::new(concurrency.max(1)));
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(15))
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .pool_max_idle_per_host(concurrency.max(1))
         .build()
         .expect("Failed to create HTTP client");

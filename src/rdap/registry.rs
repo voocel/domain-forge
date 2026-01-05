@@ -11,7 +11,7 @@ pub fn rdap_base_url(tld: &str) -> Option<&'static str> {
         "net" => Some("https://rdap.verisign.com/net/v1/"),
         "org" => Some("https://rdap.org.org/"),
         "io" => Some("https://rdap.nic.io/"),
-        "ai" => Some("https://rdap.nic.ai/"),
+        "ai" => Some("https://rdap.identitydigital.services/rdap/"),
         "tech" => Some("https://rdap.nic.tech/"),
         "app" => Some("https://rdap.nic.google/"),
         "dev" => Some("https://rdap.nic.google/"),

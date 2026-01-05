@@ -325,11 +325,14 @@ fn print_help() {
     println!("    domain-forge snipe --six              6-letter pronounceable (~351k)");
     println!();
     println!("SNIPE OPTIONS:");
+    println!("    -l, --length <N>      Domain length to scan (2-10, default: 4)");
     println!("    -w, --words           Scan 5-letter meaningful words (recommended!)");
     println!("    -p, --pronounceable   Scan 4-letter pronounceable patterns");
     println!("        --six             Scan 6-letter pronounceable patterns");
     println!("    -t, --tld <TLD>       TLDs to scan (comma-separated, default: com)");
-    println!("    -c, --concurrency <N> Concurrent checks (default: 15)");
+    println!("    -a, --alphanumeric    Include digits (a-z, 0-9)");
+    println!("    -c, --concurrency <N> Concurrent checks (default: 20)");
+    println!("    --rate <MS>           Delay between batches in ms (default: 500)");
     println!("    -r, --resume          Resume previous scan");
     println!("    -e, --expiring <DAYS> Days threshold for expiring soon (default: 7)");
     println!();
@@ -337,6 +340,7 @@ fn print_help() {
     println!("    domain-forge snipe recheck output/snipe_results_*.json");
     println!();
     println!("EXAMPLES:");
+    println!("    domain-forge snipe -l 3 --tld ai       # 3-letter domains on .ai");
     println!("    domain-forge snipe -w --tld com,io    # 5-letter words on .com/.io");
     println!("    domain-forge snipe -w -c 30           # 5-letter words, 30 concurrent");
     println!("    domain-forge \"AI productivity app\"    # AI-generated domains");
@@ -564,6 +568,16 @@ fn parse_snipe_args(args: &[String]) -> SnipeConfig {
                     i += 1;
                 }
             }
+            "--length" | "-l" => {
+                if i + 1 < args.len() {
+                    if let Ok(n) = args[i + 1].parse::<usize>() {
+                        if n >= 2 && n <= 10 {
+                            config.length = n;
+                        }
+                    }
+                    i += 1;
+                }
+            }
             "--resume" | "-r" => {
                 config.state_file = Some(ScanState::default_path(config.length));
             }
@@ -591,6 +605,14 @@ fn parse_snipe_args(args: &[String]) -> SnipeConfig {
                 if i + 1 < args.len() {
                     if let Ok(n) = args[i + 1].parse() {
                         config.expiring_days = n;
+                    }
+                    i += 1;
+                }
+            }
+            "--rate" => {
+                if i + 1 < args.len() {
+                    if let Ok(n) = args[i + 1].parse() {
+                        config.rate_limit_ms = n;
                     }
                     i += 1;
                 }
@@ -626,14 +648,14 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
     }
 
     let mode_title = match config.mode {
-        ScanMode::Full => "4-letter domain scanner",
-        ScanMode::Pronounceable => "4-letter pronounceable scanner",
-        ScanMode::Words => "5-letter word scanner",
-        ScanMode::Six => "6-letter pronounceable scanner",
+        ScanMode::Full => format!("{}-letter domain scanner", config.length),
+        ScanMode::Pronounceable => "4-letter pronounceable scanner".to_string(),
+        ScanMode::Words => "5-letter word scanner".to_string(),
+        ScanMode::Six => "6-letter pronounceable scanner".to_string(),
     };
 
     println!("Domain Sniper - {}", mode_title);
-    println!("{}", "=".repeat(40 + mode_title.len()));
+    println!("{}", "=".repeat(18 + mode_title.len()));
     println!();
 
     // Check if resuming
@@ -675,7 +697,8 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
     let length = match config.mode {
         ScanMode::Words => 5,
         ScanMode::Six => 6,
-        _ => 4,
+        ScanMode::Pronounceable => 4,
+        ScanMode::Full => config.length,
     };
 
     println!("Scan Configuration:");
@@ -701,11 +724,12 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
     let result = sniper.run(|progress| {
         pb.set_position(progress.current);
         pb.set_message(format!(
-            "{:.1}/s | {} avail | {} expiring | {} expired",
+            "{:.1}/s | {} avail | {} expiring | {} expired | {} err",
             progress.domains_per_second,
             progress.available_count,
             progress.expiring_count,
-            progress.expired_count
+            progress.expired_count,
+            progress.error_count
         ));
     }).await;
 

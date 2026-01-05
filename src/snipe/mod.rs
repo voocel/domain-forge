@@ -15,6 +15,7 @@ pub use generator::DomainGenerator;
 pub use scanner::{recheck_expiring_soon, DomainSniper, RecheckReport, SnipeConfig, SnipeResult, SnipeStatus, ScanMode};
 pub use six::SixLetterGenerator;
 pub use state::ScanState;
+pub use state::FailedDomain;
 pub use words::WordGenerator;
 
 /// Character set for domain generation

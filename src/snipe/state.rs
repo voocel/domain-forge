@@ -32,6 +32,9 @@ pub struct ScanState {
     pub expired: Vec<SnipedDomain>,
     /// Domains expiring soon
     pub expiring_soon: Vec<SnipedDomain>,
+    /// Failed domain checks with error details
+    #[serde(default)]
+    pub errors: Vec<FailedDomain>,
     /// Number of domains checked
     pub checked_count: u64,
     /// Number of errors encountered
@@ -60,6 +63,16 @@ pub struct SnipedDomain {
     pub found_at: DateTime<Utc>,
 }
 
+/// A failed domain check
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailedDomain {
+    pub domain: String,
+    pub tld: String,
+    pub full_domain: String,
+    pub error: String,
+    pub failed_at: DateTime<Utc>,
+}
+
 impl ScanState {
     /// Create a new scan state
     pub fn new(length: usize, tlds: Vec<String>, total_combinations: u64) -> Self {
@@ -74,6 +87,7 @@ impl ScanState {
             available: Vec::new(),
             expired: Vec::new(),
             expiring_soon: Vec::new(),
+            errors: Vec::new(),
             checked_count: 0,
             error_count: 0,
             started_at: now,
@@ -125,6 +139,13 @@ impl ScanState {
     /// Add an expiring domain
     pub fn add_expiring(&mut self, domain: SnipedDomain) {
         self.expiring_soon.push(domain);
+        self.updated_at = Utc::now();
+    }
+
+    /// Add a failed domain check
+    pub fn add_error(&mut self, failed: FailedDomain) {
+        self.errors.push(failed);
+        self.error_count += 1;
         self.updated_at = Utc::now();
     }
 
