@@ -5,6 +5,7 @@
 
 mod filter;
 mod generator;
+mod readable;
 mod scanner;
 mod six;
 mod state;
@@ -12,6 +13,7 @@ mod words;
 
 pub use filter::PronounceableGenerator;
 pub use generator::DomainGenerator;
+pub use readable::ReadableGenerator;
 pub use scanner::{recheck_expiring_soon, DomainSniper, RecheckReport, SnipeConfig, SnipeResult, SnipeStatus, ScanMode};
 pub use six::SixLetterGenerator;
 pub use state::ScanState;

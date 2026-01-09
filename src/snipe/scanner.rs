@@ -10,6 +10,7 @@ use tokio::sync::Semaphore;
 
 use super::filter::PronounceableGenerator;
 use super::generator::DomainGenerator;
+use super::readable::ReadableGenerator;
 use super::six::SixLetterGenerator;
 use super::state::{ScanState, SnipedDomain, FailedDomain};
 use super::words::WordGenerator;
@@ -29,6 +30,8 @@ pub enum ScanMode {
     Words,
     /// 6-letter pronounceable (high-quality subset)
     Six,
+    /// Readable 5-6 letter names (brandable, pronounceable with clusters)
+    Readable,
 }
 
 /// Snipe scan status
@@ -122,6 +125,7 @@ enum GeneratorKind {
     Pronounceable(PronounceableGenerator),
     Words(WordGenerator),
     Six(SixLetterGenerator),
+    Readable(ReadableGenerator),
 }
 
 impl GeneratorKind {
@@ -131,6 +135,7 @@ impl GeneratorKind {
             GeneratorKind::Pronounceable(g) => g.next_batch(count),
             GeneratorKind::Words(g) => g.next_batch(count),
             GeneratorKind::Six(g) => g.next_batch(count),
+            GeneratorKind::Readable(g) => g.next_batch(count),
         }
     }
 
@@ -140,6 +145,7 @@ impl GeneratorKind {
             GeneratorKind::Pronounceable(g) => g.is_exhausted(),
             GeneratorKind::Words(g) => g.is_exhausted(),
             GeneratorKind::Six(g) => g.is_exhausted(),
+            GeneratorKind::Readable(g) => g.is_exhausted(),
         }
     }
 
@@ -149,6 +155,7 @@ impl GeneratorKind {
             GeneratorKind::Pronounceable(g) => g.current_index(),
             GeneratorKind::Words(g) => g.current_index(),
             GeneratorKind::Six(g) => g.current_index(),
+            GeneratorKind::Readable(g) => g.current_index(),
         }
     }
 
@@ -158,9 +165,9 @@ impl GeneratorKind {
             GeneratorKind::Pronounceable(g) => g.set_index(index),
             GeneratorKind::Words(g) => g.set_index(index),
             GeneratorKind::Six(g) => g.set_index(index),
+            GeneratorKind::Readable(g) => g.set_index(index),
         }
     }
-
 }
 
 /// Domain sniper for scanning short domains
@@ -203,6 +210,11 @@ impl DomainSniper {
                 let total = gen.total() * config.tlds.len() as u64;
                 (GeneratorKind::Six(gen), total, 6)
             }
+            ScanMode::Readable => {
+                let gen = ReadableGenerator::new();
+                let total = gen.total_count() as u64 * config.tlds.len() as u64;
+                (GeneratorKind::Readable(gen), total, 5) // 5-6 letters, use 5 as base
+            }
         };
 
         let state = ScanState::new(length, config.tlds.clone(), total);
@@ -244,6 +256,9 @@ impl DomainSniper {
             ScanMode::Six => {
                 GeneratorKind::Six(SixLetterGenerator::new())
             }
+            ScanMode::Readable => {
+                GeneratorKind::Readable(ReadableGenerator::new())
+            }
         };
         generator.set_index(state.current_index);
 
@@ -270,6 +285,7 @@ impl DomainSniper {
         let effective_length = match config.mode {
             ScanMode::Words => 5,
             ScanMode::Six => 6,
+            ScanMode::Readable => 5, // 5-6 letters, use 5 as base
             _ => config.length,
         };
 
