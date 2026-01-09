@@ -323,14 +323,14 @@ fn print_help() {
     println!("    domain-forge snipe -p                 4-letter pronounceable (~137k)");
     println!("    domain-forge snipe -w                 5-letter meaningful words (~5k)");
     println!("    domain-forge snipe --six              6-letter pronounceable (~351k)");
-    println!("    domain-forge snipe -R                 5-6 letter readable names (~625k)");
+    println!("    domain-forge snipe -R                 5-letter readable names (~27k)");
     println!();
     println!("SNIPE OPTIONS:");
     println!("    -l, --length <N>      Domain length to scan (2-10, default: 4)");
     println!("    -w, --words           Scan 5-letter meaningful words (recommended!)");
     println!("    -p, --pronounceable   Scan 4-letter pronounceable patterns");
     println!("        --six             Scan 6-letter pronounceable patterns");
-    println!("    -R, --readable        Scan 5-6 letter readable/brandable names");
+    println!("    -R, --readable        Scan 5-letter readable/brandable names (~27k)");
     println!("    -t, --tld <TLD>       TLDs to scan (comma-separated, default: com)");
     println!("    -a, --alphanumeric    Include digits (a-z, 0-9)");
     println!("    -c, --concurrency <N> Concurrent checks (default: 20)");
@@ -657,7 +657,7 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
         ScanMode::Pronounceable => "4-letter pronounceable scanner".to_string(),
         ScanMode::Words => "5-letter word scanner".to_string(),
         ScanMode::Six => "6-letter pronounceable scanner".to_string(),
-        ScanMode::Readable => "5-6 letter readable name scanner".to_string(),
+        ScanMode::Readable => "5-letter readable name scanner".to_string(),
     };
 
     println!("Domain Sniper - {}", mode_title);
@@ -698,14 +698,14 @@ async fn run_snipe_command(args: &[String]) -> Result<()> {
         ScanMode::Pronounceable => "pronounceable patterns (CVCV)",
         ScanMode::Words => "meaningful 5-letter words",
         ScanMode::Six => "pronounceable 6-letter patterns (CVCVCV/VCVCVC)",
-        ScanMode::Readable => "readable/brandable names (clusters, design chars)",
+        ScanMode::Readable => "readable 5-letter names (CVCVC, ends with n/r/s/l)",
     };
 
     let length_display = match config.mode {
         ScanMode::Words => "5".to_string(),
         ScanMode::Six => "6".to_string(),
         ScanMode::Pronounceable => "4".to_string(),
-        ScanMode::Readable => "5-6".to_string(),
+        ScanMode::Readable => "5".to_string(),
         ScanMode::Full => config.length.to_string(),
     };
 

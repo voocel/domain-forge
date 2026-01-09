@@ -33,54 +33,64 @@ const BANNED_SEQS: &[&str] = &[
     "rq", "qr",
 ];
 
-/// Good ending consonants (natural sounding)
-#[allow(dead_code)]
+/// Good ending consonants (natural sounding, brandable)
 const GOOD_ENDINGS: &[char] = &['n', 'r', 's', 'l'];
 
 /// Validate if a name is readable and pronounceable
 fn is_valid(name: &str) -> bool {
-    let len = name.len();
-    
-    // Length must be 5-6 characters
-    if !(5..=6).contains(&len) {
+    // Only 5 letters (more focused, brandable)
+    if name.len() != 5 {
         return false;
     }
-    
+
     // At least 2 vowels (y counts as 0.5)
     let vowel_score: f32 = name.chars().map(|ch| {
         if VOWELS.contains(&ch) { 1.0 }
         else if WEAK_VOWELS.contains(&ch) { 0.5 }
         else { 0.0 }
     }).sum();
-    
+
     if vowel_score < 2.0 {
         return false;
     }
-    
+
     // Check banned sequences
     for bad in BANNED_SEQS {
         if name.contains(bad) {
             return false;
         }
     }
-    
+
     // y cannot be at the end
     if name.ends_with('y') {
         return false;
     }
-    
-    // x/z cannot be followed by consonants (hard to pronounce)
+
+    // Must end with n/r/s/l (brandable endings like Karen, Coder, Focus, Panel)
+    let last_char = name.chars().last().unwrap();
+    if !GOOD_ENDINGS.contains(&last_char) {
+        return false;
+    }
+
+    // No adjacent repeated letters (avoid babab, cacac)
     let chars: Vec<char> = name.chars().collect();
+    for i in 0..chars.len().saturating_sub(1) {
+        if chars[i] == chars[i + 1] {
+            return false;
+        }
+    }
+
+    // x/z cannot be followed by consonants (hard to pronounce)
     for i in 0..chars.len().saturating_sub(1) {
         if DESIGN_CHARS.contains(&chars[i]) && CONSONANTS.contains(&chars[i + 1]) {
             return false;
         }
     }
-    
+
     true
 }
 
-/// Generator for readable 5-6 letter domain names
+/// Generator for readable 5-letter domain names (~27,200 total)
 pub struct ReadableGenerator {
     names: Vec<String>,
     current_index: usize,
@@ -268,19 +278,30 @@ mod tests {
 
     #[test]
     fn test_is_valid() {
-        // Valid names
+        // Valid names (5 letters, ends with n/r/s/l, no repeated letters)
         assert!(is_valid("banan"));
         assert!(is_valid("koder"));
         assert!(is_valid("nexor"));
+        assert!(is_valid("fokus"));
+        assert!(is_valid("panel"));
 
         // Too short
         assert!(!is_valid("ban"));
 
-        // Too long
+        // Too long (now only 5 letters allowed)
+        assert!(!is_valid("banana"));
         assert!(!is_valid("bananas"));
 
         // Ends with y
         assert!(!is_valid("banny"));
+
+        // Wrong ending (must be n/r/s/l)
+        assert!(!is_valid("bakat"));
+        assert!(!is_valid("bakab"));
+
+        // Adjacent repeated letters
+        assert!(!is_valid("baaan"));
+        assert!(!is_valid("bobbl"));
 
         // Banned sequence
         assert!(!is_valid("barrn"));
