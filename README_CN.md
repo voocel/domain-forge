@@ -68,6 +68,7 @@ export GEMINI_API_KEY="your-gemini-api-key"
 | N字母扫描 | `-l N` | 可变 | 所有N字母组合 (2-10) |
 | 可发音 | `-p` | ~137k | 4字母可发音模式 (CVCV等) |
 | **词库** | `-w` | ~10k | 5字母有意义单词（推荐！） |
+| **可读** | `-R` | ~27k | 5字母可读/品牌化名称 (CVCVC模式) |
 | 6字母 | `--six` | ~351k | 6字母可发音模式 |
 
 ### 使用方法
@@ -87,6 +88,9 @@ export GEMINI_API_KEY="your-gemini-api-key"
 
 # 6字母可发音模式
 ./target/release/domain-forge snipe --six --tld com
+
+# 5字母可读/品牌化名称 (CVCVC模式, ~27k)
+./target/release/domain-forge snipe -R --tld com
 
 # 扫描多个TLD
 ./target/release/domain-forge snipe -w --tld com,io,ai
@@ -122,6 +126,7 @@ export GEMINI_API_KEY="your-gemini-api-key"
 |------|------|
 | `-l, --length <N>` | 域名长度 (2-10，默认: 4) |
 | `-w, --words` | 扫描5字母有意义单词（推荐） |
+| `-R, --readable` | 扫描5字母可读/品牌化名称 (~27k) |
 | `-p, --pronounceable` | 扫描4字母可发音模式 |
 | `--six` | 扫描6字母可发音模式 |
 | `-t, --tld <TLD>` | 要扫描的TLD（逗号分隔，默认: com） |

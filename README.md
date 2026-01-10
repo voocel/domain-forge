@@ -66,6 +66,7 @@ Scan for available short domains using the `snipe` command:
 | Full N-letter | `-l N` | varies | All N-letter combinations (2-10) |
 | Pronounceable | `-p` | ~137k | 4-letter pronounceable patterns (CVCV, etc.) |
 | **Words** | `-w` | ~10k | 5-letter meaningful words (recommended!) |
+| **Readable** | `-R` | ~27k | 5-letter readable/brandable names (CVCVC pattern) |
 | Six | `--six` | ~351k | 6-letter pronounceable patterns |
 
 ### Usage
@@ -85,6 +86,9 @@ Scan for available short domains using the `snipe` command:
 
 # 6-letter pronounceable patterns
 ./target/release/domain-forge snipe --six --tld com
+
+# 5-letter readable/brandable names (CVCVC pattern, ~27k)
+./target/release/domain-forge snipe -R --tld com
 
 # Scan multiple TLDs
 ./target/release/domain-forge snipe -w --tld com,io,ai
@@ -120,6 +124,7 @@ Scan for available short domains using the `snipe` command:
 |--------|-------------|
 | `-l, --length <N>` | Domain length to scan (2-10, default: 4) |
 | `-w, --words` | Scan 5-letter meaningful words (recommended) |
+| `-R, --readable` | Scan 5-letter readable/brandable names (~27k) |
 | `-p, --pronounceable` | Scan 4-letter pronounceable patterns |
 | `--six` | Scan 6-letter pronounceable patterns |
 | `-t, --tld <TLD>` | TLDs to scan (comma-separated, default: com) |
