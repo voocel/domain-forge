@@ -222,7 +222,8 @@ impl DomainSniper {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-            .pool_max_idle_per_host(config.concurrency)
+            .pool_max_idle_per_host(0) // Disable connection pooling to avoid "unexpected end of file"
+            .http1_only() // Force HTTP/1.1 to avoid HTTP/2 connection issues
             .build()
             .expect("Failed to create HTTP client");
 
@@ -266,7 +267,8 @@ impl DomainSniper {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-            .pool_max_idle_per_host(config.concurrency)
+            .pool_max_idle_per_host(0) // Disable connection pooling to avoid "unexpected end of file"
+            .http1_only() // Force HTTP/1.1 to avoid HTTP/2 connection issues
             .build()
             .expect("Failed to create HTTP client");
 
@@ -676,7 +678,8 @@ pub async fn recheck_expiring_soon(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-        .pool_max_idle_per_host(concurrency.max(1))
+        .pool_max_idle_per_host(0)
+        .http1_only()
         .build()
         .expect("Failed to create HTTP client");
 
